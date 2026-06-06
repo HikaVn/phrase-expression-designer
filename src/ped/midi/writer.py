@@ -9,18 +9,27 @@ notes they apply to.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Union
 
 import mido
 
+from ..core.musictime import bar_start_tick
 from ..core.project import Project
-from .events import CCEvent, KeyswitchEvent
+from .events import CCEvent, KeyswitchEvent, ProgramChangeEvent
 
-# Ordering at identical ticks: tempo, keyswitch-on, cc, note-off, note-on, off-tail.
-_PRIORITY = {"meta": 0, "ks_on": 1, "cc": 2, "note_off": 3, "note_on": 4, "off_tail": 5}
+# Ordering at identical ticks: tempo, keyswitch-on, program change, cc,
+# note-off, note-on, off-tail.
+_PRIORITY = {
+    "meta": 0,
+    "ks_on": 1,
+    "pc": 2,
+    "cc": 3,
+    "note_off": 4,
+    "note_on": 5,
+    "off_tail": 6,
+}
 
 
-def _refuse_overwrite_input(out_path: Path, input_path: Optional[Path]) -> None:
+def _refuse_overwrite_input(out_path: Path, input_path: Path | None) -> None:
     if input_path is not None and out_path.resolve() == Path(input_path).resolve():
         raise ValueError(
             f"Refusing to overwrite the input file {out_path}; choose a different output name."
@@ -29,22 +38,24 @@ def _refuse_overwrite_input(out_path: Path, input_path: Optional[Path]) -> None:
 
 def write_midi(
     project: Project,
-    path: Union[str, Path],
-    cc_events: Optional[dict[int, list[CCEvent]]] = None,
-    keyswitches: Optional[dict[int, list[KeyswitchEvent]]] = None,
-    input_path: Optional[Union[str, Path]] = None,
+    path: str | Path,
+    cc_events: dict[int, list[CCEvent]] | None = None,
+    keyswitches: dict[int, list[KeyswitchEvent]] | None = None,
+    program_changes: dict[int, list[ProgramChangeEvent]] | None = None,
+    input_path: str | Path | None = None,
 ) -> None:
     """Write ``project`` to ``path``.
 
-    ``cc_events`` / ``keyswitches`` map a track index (into project.tracks) to its
-    generated events. ``input_path``, if given, guards against overwriting the
-    source file.
+    ``cc_events`` / ``keyswitches`` / ``program_changes`` map a track index (into
+    project.tracks) to its generated events. ``input_path``, if given, guards
+    against overwriting the source file.
     """
     out_path = Path(path)
     _refuse_overwrite_input(out_path, Path(input_path) if input_path else None)
 
     cc_events = cc_events or {}
     keyswitches = keyswitches or {}
+    program_changes = program_changes or {}
 
     mid = mido.MidiFile(ticks_per_beat=project.ppq)
 
@@ -65,6 +76,20 @@ def write_midi(
                         mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(tempo.bpm), time=0),
                     )
                 )
+            for ts in project.time_signature_map:
+                ts_tick = bar_start_tick(ts.start_bar, project.ppq, project.time_signature_map)
+                timeline.append(
+                    (
+                        ts_tick,
+                        _PRIORITY["meta"],
+                        mido.MetaMessage(
+                            "time_signature",
+                            numerator=ts.numerator,
+                            denominator=ts.denominator,
+                            time=0,
+                        ),
+                    )
+                )
 
         for note in track.notes:
             timeline.append(
@@ -81,6 +106,13 @@ def write_midi(
                 (ev.tick, _PRIORITY["cc"],
                  mido.Message("control_change", control=ev.cc, value=ev.value,
                               channel=ev.channel, time=0))
+            )
+
+        for pc in program_changes.get(t_index, []):
+            timeline.append(
+                (pc.tick, _PRIORITY["pc"],
+                 mido.Message("program_change", program=pc.program,
+                              channel=pc.channel, time=0))
             )
 
         for ks in keyswitches.get(t_index, []):

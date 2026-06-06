@@ -7,7 +7,7 @@ defined by a tick range; notes reference it by ``phrase_id``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -15,7 +15,7 @@ class Phrase:
     id: str
     start_tick: int
     end_tick: int
-    name: Optional[str] = None
+    name: str | None = None
 
     @property
     def length_tick(self) -> int:
@@ -33,7 +33,7 @@ class Phrase:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Phrase":
+    def from_dict(cls, data: dict[str, Any]) -> Phrase:
         return cls(
             id=data["id"],
             start_tick=int(data["startTick"]),

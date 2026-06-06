@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from .curve import ExpressionCurve
 from .note import Note
@@ -14,12 +14,12 @@ from .phrase import Phrase
 class Track:
     id: str
     name: str
-    instrument_profile_id: Optional[str] = None
+    instrument_profile_id: str | None = None
     notes: list[Note] = field(default_factory=list)
     expression_curves: list[ExpressionCurve] = field(default_factory=list)
     phrases: list[Phrase] = field(default_factory=list)
 
-    def curve_for(self, parameter: str) -> Optional[ExpressionCurve]:
+    def curve_for(self, parameter: str) -> ExpressionCurve | None:
         """Return the first expression curve targeting ``parameter``, if any."""
         for curve in self.expression_curves:
             if curve.parameter == parameter:
@@ -45,7 +45,7 @@ class Track:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Track":
+    def from_dict(cls, data: dict[str, Any]) -> Track:
         return cls(
             id=data["id"],
             name=data["name"],

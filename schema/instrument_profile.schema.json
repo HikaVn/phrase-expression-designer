@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HikaVn/phrase-expression-designer/schema/instrument_profile.schema.json",
+  "title": "Phrase Expression Designer Instrument Profile",
+  "type": "object",
+  "required": ["id", "noteNaming"],
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "id": { "type": "string" },
+    "engine": { "type": ["string", "null"] },
+    "library": { "type": ["string", "null"] },
+    "patch": { "type": ["string", "null"] },
+    "noteNaming": { "enum": ["C3=60", "C4=60"] },
+    "playableRange": {
+      "type": "object",
+      "required": ["low", "high"],
+      "properties": {
+        "low": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "high": { "type": "integer", "minimum": 0, "maximum": 127 }
+      }
+    },
+    "articulations": { "type": "array", "items": { "$ref": "#/$defs/articulation" } },
+    "ccMappings": { "type": "array", "items": { "$ref": "#/$defs/ccMapping" } },
+    "calibrationCurves": { "type": "array", "items": { "$ref": "#/$defs/calibrationCurve" } }
+  },
+  "$defs": {
+    "articulation": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "enum": ["long", "short", "effect"] },
+        "trigger": { "$ref": "#/$defs/trigger" },
+        "defaultMacro": { "type": ["string", "null"] },
+        "expressionBehavior": { "type": "object" }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["keyswitch", "cc", "program_change"] },
+        "note": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "noteName": { "type": "string" },
+        "mode": { "enum": ["latch", "momentary"] },
+        "cc": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "value": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "program": { "type": "integer", "minimum": 0, "maximum": 127 }
+      }
+    },
+    "ccMapping": {
+      "type": "object",
+      "required": ["internalParameter", "target"],
+      "properties": {
+        "internalParameter": { "type": "string" },
+        "target": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "enum": ["cc", "keyswitch", "program_change"] },
+            "cc": { "type": "integer", "minimum": 0, "maximum": 127 }
+          }
+        },
+        "curveId": { "type": ["string", "null"] },
+        "smoothingMs": { "type": "number", "minimum": 0 },
+        "lookAheadMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "calibrationCurve": {
+      "type": "object",
+      "required": ["id", "points"],
+      "properties": {
+        "id": { "type": "string" },
+        "inputRange": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "outputRange": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
+        "interpolation": { "enum": ["linear", "monotonic"] },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["input", "output"],
+            "properties": {
+              "input": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+              "output": { "type": "integer", "minimum": 0, "maximum": 127 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

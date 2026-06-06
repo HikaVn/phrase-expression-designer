@@ -30,24 +30,35 @@ Keep DAW-specific and library-specific knowledge out of `core`.
 | Module | Responsibility |
 | --- | --- |
 | `core/pitch.py` | Note name ⇄ MIDI number, C3=60 / C4=60 conventions |
+| `core/musictime.py` | `TimeSignature`, bar:beat ⇄ tick conversion |
 | `core/note.py` | `Note` (tick timing, pitch, velocity, articulation ref) |
 | `core/phrase.py` | `Phrase` (tick range that shares shaping) |
 | `core/curve.py` | `ExpressionCurve` / `CurvePoint`, interpolation + sampling |
 | `core/track.py` | `Track` (notes + curves + phrases) |
-| `core/project.py` | `Project` (ppq, tempo map, tracks) + JSON load/save |
-| `profiles/calibration.py` | `CalibrationCurve`: intent 0–1 → CC 0–127 |
+| `core/project.py` | `Project` (ppq, tempo + time-signature maps, tracks) + JSON I/O |
+| `core/report.py` | Shared `Issue` / `ValidationReport` (errors vs warnings) |
+| `profiles/calibration.py` | `CalibrationCurve`: intent 0–1 → CC 0–127 (linear / monotone-cubic) |
+| `profiles/calibration_assistant.py` | Build a calibration curve from a ppp…fff table |
 | `profiles/articulation.py` | `Articulation`, `Trigger`, `CCMapping` |
 | `profiles/instrument_profile.py` | `InstrumentProfile` + JSON load/save |
 | `profiles/pitch_compat.py` | Resolve a keyswitch trigger to a MIDI note |
-| `profiles/validation.py` | Profile checks (errors vs warnings) |
-| `midi/events.py` | `CCEvent`, `KeyswitchEvent` (tick-based) |
-| `midi/reader.py` | SMF → `Project` |
+| `profiles/validation.py` | Profile checks |
+| `project_checks.py` | Project-level checks (structure + cross-refs), top layer |
+| `midi/events.py` | `CCEvent`, `KeyswitchEvent`, `ProgramChangeEvent` (tick-based) |
+| `midi/reader.py` | SMF → `Project` (notes, tempo, time signatures) |
 | `midi/writer.py` | `Project` + events → SMF (timing preserved) |
-| `engine/expression_mapper.py` | Curves → CC events via calibration |
-| `engine/rule_engine.py` | Notes/articulations → keyswitch events |
-| `engine/templates.py` | Named intent shapes (swell, arch, ...) |
+| `engine/expression_mapper.py` | Curves → CC events via calibration (+ lookAhead) |
+| `engine/rule_engine.py` | Articulations → keyswitch / CC / program-change events |
+| `engine/performance.py` | Phrase detection + velocity shaping rules (§9.8) |
+| `engine/phrase_painter.py` | One intent line → several derived curves (§9.2) |
+| `engine/macros.py` | Multi-parameter expression macros (§9.3) |
+| `engine/templates.py` | Named single-parameter intent shapes (swell, arch, ...) |
 | `engine/smoothing.py` | One-pole low-pass for CC streams |
 | `cli/main.py` | The `ped` command |
+
+`schema/` holds JSON Schema (draft 2020-12) for the project and instrument
+profile formats; `validate-project` checks values, and the schema is enforced on
+example profiles in the test suite.
 
 ## Export data flow
 

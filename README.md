@@ -36,16 +36,39 @@ ped inspect-midi examples/midi/simple_phrase.mid
 ped import-midi examples/midi/simple_phrase.mid \
     --profile example_kontakt_strings_vln1 -o my.project.json
 
-# 3. Paint a phrase with an expression template (ticks)
-ped apply-template natural_swell --project my.project.json --track "Violin 1"
+# 3a. Paint a phrase with a single-parameter template (bar:beat or ticks)
+ped apply-template natural_swell --project my.project.json --track "Violin 1" \
+    --start-pos 1:1 --end-pos 5:1
 
-# 4. Export MIDI with generated CC + keyswitches
+# 3b. Or apply a multi-parameter macro, or expand one intent line into several
+ped apply-macro cinematic_rise --project my.project.json --track "Violin 1"
+ped paint-phrase --project my.project.json --track "Violin 1"   # intensity -> volume/vibrato/timbre
+
+# 4. Export MIDI with generated CC + keyswitches (+ performance shaping)
 ped export-midi --project my.project.json \
-    --profile examples/profiles/example_kontakt_strings_vln1.json -o my.out.mid
+    --profile examples/profiles/example_kontakt_strings_vln1.json \
+    -o my.out.mid --perform
 
-# Validate a profile any time
+# Validate, and build a calibration curve from measured dynamics
 ped validate-profile examples/profiles/example_kontakt_strings_vln1.json
+ped validate-project my.project.json --profile examples/profiles/example_kontakt_strings_vln1.json
+ped calibrate --id dyn --levels "ppp=8,p=35,mf=68,ff=110,fff=120" \
+    --profile examples/profiles/example_kontakt_strings_vln1.json
 ```
+
+### Commands
+
+| Command | Purpose |
+| --- | --- |
+| `inspect-midi` | Summarize a MIDI file |
+| `import-midi` | MIDI → project JSON |
+| `validate-profile` | Check an instrument profile |
+| `validate-project` | Check a project (structure + refs, optional profile cross-check) |
+| `apply-template` | Add one template curve (swell, arch, …) |
+| `apply-macro` | Add a multi-parameter macro (emotional_swell, cinematic_rise, …) |
+| `paint-phrase` | Derive volume/vibrato/timbre curves from one intent line |
+| `calibrate` | Build a calibration curve from a ppp…fff table |
+| `export-midi` | Project + profile → MIDI with CC/keyswitches/program changes (`--perform` for velocity shaping) |
 
 ## How it fits together
 
@@ -67,18 +90,24 @@ MIDI ◀─write── notes (unchanged) + CC + keyswitches
 
 ```
 src/ped/
-  core/      DAW-independent data: note, phrase, track, project, curve, pitch
-  profiles/  instrument_profile, articulation, calibration, validation
+  core/      DAW-independent data: note, phrase, track, project, curve, pitch, musictime, report
+  profiles/  instrument_profile, articulation, calibration, calibration_assistant, validation
   midi/      reader, writer, events  (mido)
-  engine/    expression_mapper, rule_engine, templates, smoothing
+  engine/    expression_mapper, rule_engine, performance, phrase_painter, macros, templates, smoothing
   cli/       main  (the `ped` command)
+  project_checks.py   project-level validation
+schema/      JSON Schema for project + instrument profile
 ```
 
-## Tests
+## Tests & checks
 
 ```bash
-python -m pytest
+python -m pytest          # 98 tests
+ruff check src tests      # lint
+mypy                      # type check
 ```
+
+CI (GitHub Actions) runs all three on Python 3.10–3.13.
 
 ## Documentation
 

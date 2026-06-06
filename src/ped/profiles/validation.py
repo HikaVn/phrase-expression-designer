@@ -6,44 +6,12 @@ warnings (likely a mistake, but usable). See Task 007 in the spec.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
+from ..core.report import ERROR, WARNING, Issue, ValidationReport
 from .calibration import CalibrationCurve
 from .instrument_profile import InstrumentProfile
 from .pitch_compat import resolve_keyswitch_note
 
-ERROR = "error"
-WARNING = "warning"
-
-
-@dataclass
-class Issue:
-    severity: str
-    code: str
-    message: str
-
-    def __str__(self) -> str:
-        return f"[{self.severity.upper()}] {self.code}: {self.message}"
-
-
-@dataclass
-class ValidationReport:
-    issues: list[Issue] = field(default_factory=list)
-
-    @property
-    def errors(self) -> list[Issue]:
-        return [i for i in self.issues if i.severity == ERROR]
-
-    @property
-    def warnings(self) -> list[Issue]:
-        return [i for i in self.issues if i.severity == WARNING]
-
-    @property
-    def ok(self) -> bool:
-        return not self.errors
-
-    def add(self, severity: str, code: str, message: str) -> None:
-        self.issues.append(Issue(severity, code, message))
+__all__ = ["ERROR", "WARNING", "Issue", "ValidationReport", "validate_profile"]
 
 
 def _check_calibration_range(curve: CalibrationCurve, report: ValidationReport) -> None:

@@ -49,7 +49,7 @@ class CurvePoint:
         return {"tick": self.tick, "value": self.value, "shape": self.shape}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CurvePoint":
+    def from_dict(cls, data: dict[str, Any]) -> CurvePoint:
         return cls(
             tick=int(data["tick"]),
             value=float(data["value"]),
@@ -76,7 +76,7 @@ class ExpressionCurve:
         if tick >= pts[-1].tick:
             return pts[-1].value
 
-        for left, right in zip(pts, pts[1:]):
+        for left, right in zip(pts, pts[1:], strict=False):
             if left.tick <= tick <= right.tick:
                 if left.shape == "hold" or right.tick == left.tick:
                     return clip01(left.value)
@@ -108,7 +108,7 @@ class ExpressionCurve:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ExpressionCurve":
+    def from_dict(cls, data: dict[str, Any]) -> ExpressionCurve:
         return cls(
             id=data["id"],
             parameter=data["parameter"],

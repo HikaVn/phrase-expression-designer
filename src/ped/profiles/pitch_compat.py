@@ -7,7 +7,7 @@ C3=60 vs C4=60 mistake).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ..core.pitch import SUPPORTED_NAMINGS, note_name_to_number
 
@@ -19,18 +19,18 @@ __all__ = ["SUPPORTED_NAMINGS", "resolve_keyswitch_note"]
 
 
 def resolve_keyswitch_note(
-    trigger: "Trigger",
+    trigger: Trigger,
     naming: str,
-    report: Optional["ValidationReport"] = None,
+    report: ValidationReport | None = None,
     art_id: str = "",
-) -> Optional[int]:
+) -> int | None:
     """Return the effective MIDI note for a keyswitch trigger, or None if unknown.
 
     The explicit ``note`` wins; ``noteName`` is used as a fallback and as a
     cross-check. Disagreements and missing data are reported when a report is
     supplied.
     """
-    from_name: Optional[int] = None
+    from_name: int | None = None
     if trigger.note_name and naming in SUPPORTED_NAMINGS:
         try:
             from_name = note_name_to_number(trigger.note_name, naming)

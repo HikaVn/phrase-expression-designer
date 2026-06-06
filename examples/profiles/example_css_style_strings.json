@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "example_css_style_strings_vln1",
+  "engine": "Kontakt",
+  "library": "Example CSS-style Strings",
+  "patch": "Violins 1",
+  "noteNaming": "C3=60",
+  "playableRange": { "low": 55, "high": 105 },
+  "articulations": [
+    {
+      "id": "legato",
+      "name": "Legato",
+      "type": "long",
+      "trigger": { "type": "keyswitch", "note": 0, "noteName": "C-2", "mode": "latch" },
+      "defaultMacro": "classical_restrained",
+      "expressionBehavior": { "velocityRole": "secondary", "ccRole": "primary" }
+    },
+    {
+      "id": "sustain",
+      "name": "Sustain",
+      "type": "long",
+      "trigger": { "type": "keyswitch", "note": 1, "noteName": "C#-2", "mode": "latch" },
+      "expressionBehavior": { "velocityRole": "secondary", "ccRole": "primary" }
+    },
+    {
+      "id": "spiccato",
+      "name": "Spiccato",
+      "type": "short",
+      "trigger": { "type": "keyswitch", "note": 2, "noteName": "D-2", "mode": "latch" },
+      "expressionBehavior": { "velocityRole": "primary", "ccRole": "secondary" }
+    },
+    {
+      "id": "pizzicato",
+      "name": "Pizzicato",
+      "type": "short",
+      "trigger": { "type": "keyswitch", "note": 3, "noteName": "D#-2", "mode": "latch" },
+      "expressionBehavior": { "velocityRole": "primary", "ccRole": "secondary" }
+    }
+  ],
+  "ccMappings": [
+    {
+      "internalParameter": "intensity",
+      "target": { "type": "cc", "cc": 1 },
+      "curveId": "css_dynamics",
+      "smoothingMs": 60,
+      "lookAheadMs": 120
+    },
+    {
+      "internalParameter": "volume",
+      "target": { "type": "cc", "cc": 11 },
+      "curveId": "css_expression",
+      "smoothingMs": 50
+    },
+    {
+      "internalParameter": "vibratoDepth",
+      "target": { "type": "cc", "cc": 21 },
+      "curveId": "linear_full"
+    }
+  ],
+  "calibrationCurves": [
+    {
+      "id": "css_dynamics",
+      "inputRange": [0.0, 1.0],
+      "outputRange": [0, 127],
+      "interpolation": "monotonic",
+      "points": [
+        { "input": 0.0, "output": 5 },
+        { "input": 0.2, "output": 28 },
+        { "input": 0.4, "output": 52 },
+        { "input": 0.6, "output": 78 },
+        { "input": 0.8, "output": 104 },
+        { "input": 1.0, "output": 124 }
+      ]
+    },
+    {
+      "id": "css_expression",
+      "inputRange": [0.0, 1.0],
+      "outputRange": [0, 127],
+      "interpolation": "monotonic",
+      "points": [
+        { "input": 0.0, "output": 30 },
+        { "input": 0.5, "output": 95 },
+        { "input": 1.0, "output": 127 }
+      ]
+    },
+    {
+      "id": "linear_full",
+      "inputRange": [0.0, 1.0],
+      "outputRange": [0, 127],
+      "interpolation": "linear",
+      "points": [
+        { "input": 0.0, "output": 0 },
+        { "input": 1.0, "output": 127 }
+      ]
+    }
+  ]
+}

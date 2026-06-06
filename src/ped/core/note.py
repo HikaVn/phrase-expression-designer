@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -19,8 +19,8 @@ class Note:
     start_tick: int
     duration_tick: int
     velocity: int = 80  # 1-127
-    articulation_id: Optional[str] = None
-    phrase_id: Optional[str] = None
+    articulation_id: str | None = None
+    phrase_id: str | None = None
 
     @property
     def end_tick(self) -> int:
@@ -38,7 +38,7 @@ class Note:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Note":
+    def from_dict(cls, data: dict[str, Any]) -> Note:
         return cls(
             id=data["id"],
             pitch=int(data["pitch"]),

@@ -1,10 +1,11 @@
+import pytest
+
 from ped.core.note import Note
 from ped.core.project import Project, TempoEvent
 from ped.core.track import Track
 from ped.midi.events import CCEvent, KeyswitchEvent
 from ped.midi.reader import read_midi
 from ped.midi.writer import write_midi
-import pytest
 
 
 def build_project(ppq=480):
@@ -33,7 +34,7 @@ def test_note_timing_preserved(tmp_path):
     orig = p.tracks[0].notes
     got = back.tracks[0].notes
     assert len(got) == len(orig)
-    for a, b in zip(orig, got):
+    for a, b in zip(orig, got, strict=True):
         assert (b.pitch, b.start_tick, b.duration_tick, b.velocity) == (
             a.pitch, a.start_tick, a.duration_tick, a.velocity
         )

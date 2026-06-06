@@ -26,3 +26,10 @@ class KeyswitchEvent:
     velocity: int = 100
     duration_tick: int = 1
     channel: int = 0
+
+
+@dataclass(order=True)
+class ProgramChangeEvent:
+    tick: int
+    program: int  # 0-127
+    channel: int = 0

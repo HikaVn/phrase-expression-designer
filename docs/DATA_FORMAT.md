@@ -11,9 +11,14 @@ All JSON uses `camelCase` keys. `schemaVersion` is `"0.1.0"`. Times are in
   "projectName": "Example Project",
   "ppq": 960,
   "tempoMap": [{ "tick": 0, "bpm": 120.0 }],
+  "timeSignatureMap": [{ "startBar": 1, "numerator": 4, "denominator": 4 }],
   "tracks": []
 }
 ```
+
+`timeSignatureMap` entries begin at a 1-based `startBar`; if none starts at bar
+1, 4/4 is assumed. It drives `bar:beat[:tick]` position parsing (used by the
+`--start-pos` / `--end-pos` CLI options) — see `ped.core.musictime`.
 
 ## Track
 
@@ -145,5 +150,6 @@ Maps a normalized intent value to a CC value. Output is clamped to
 }
 ```
 
-`interpolation` is `"linear"` or `"monotonic"`. Both currently use
-piecewise-linear interpolation; true monotone-cubic is a TODO.
+`interpolation` is `"linear"` (piecewise-linear) or `"monotonic"`
+(Fritsch–Carlson monotone cubic Hermite spline — smooth, no overshoot between
+non-decreasing nodes).

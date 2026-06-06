@@ -50,7 +50,7 @@ def test_no_duplicate_consecutive_cc(example_profile_path):
     profile = InstrumentProfile.load(example_profile_path)
     events = [e for e in map_track_to_cc(make_track(), profile, ppq=480) if e.cc == 1]
     values = [e.value for e in events]
-    assert all(a != b for a, b in zip(values, values[1:]))
+    assert all(a != b for a, b in zip(values, values[1:], strict=False))
 
 
 def test_keyswitch_latch_only_on_change(example_profile_path):

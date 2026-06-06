@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HikaVn/phrase-expression-designer/schema/project.schema.json",
+  "title": "Phrase Expression Designer Project",
+  "type": "object",
+  "required": ["tracks"],
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "projectName": { "type": "string" },
+    "ppq": { "type": "integer", "minimum": 1 },
+    "tempoMap": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tick", "bpm"],
+        "properties": {
+          "tick": { "type": "integer", "minimum": 0 },
+          "bpm": { "type": "number", "exclusiveMinimum": 0 }
+        }
+      }
+    },
+    "timeSignatureMap": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["startBar", "numerator", "denominator"],
+        "properties": {
+          "startBar": { "type": "integer", "minimum": 1 },
+          "numerator": { "type": "integer", "minimum": 1 },
+          "denominator": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "tracks": { "type": "array", "items": { "$ref": "#/$defs/track" } }
+  },
+  "$defs": {
+    "track": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "instrumentProfileId": { "type": ["string", "null"] },
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/note" } },
+        "expressionCurves": { "type": "array", "items": { "$ref": "#/$defs/curve" } },
+        "phrases": { "type": "array", "items": { "$ref": "#/$defs/phrase" } }
+      }
+    },
+    "note": {
+      "type": "object",
+      "required": ["id", "pitch", "startTick", "durationTick"],
+      "properties": {
+        "id": { "type": "string" },
+        "pitch": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "startTick": { "type": "integer", "minimum": 0 },
+        "durationTick": { "type": "integer", "minimum": 0 },
+        "velocity": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "articulationId": { "type": ["string", "null"] },
+        "phraseId": { "type": ["string", "null"] }
+      }
+    },
+    "curve": {
+      "type": "object",
+      "required": ["id", "parameter", "points"],
+      "properties": {
+        "id": { "type": "string" },
+        "parameter": { "type": "string" },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["tick", "value"],
+            "properties": {
+              "tick": { "type": "integer", "minimum": 0 },
+              "value": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+              "shape": { "enum": ["linear", "smooth", "hold"] }
+            }
+          }
+        }
+      }
+    },
+    "phrase": {
+      "type": "object",
+      "required": ["id", "startTick", "endTick"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "startTick": { "type": "integer", "minimum": 0 },
+        "endTick": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

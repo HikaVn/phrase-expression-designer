@@ -1,8 +1,10 @@
 # Testing
 
 ```bash
-python -m pytest          # full suite (currently 44 tests)
+python -m pytest          # full suite (98 tests)
 python -m pytest -k pitch # a subset
+ruff check src tests      # lint
+mypy                      # type check
 ```
 
 ## What is covered
@@ -11,11 +13,22 @@ python -m pytest -k pitch # a subset
 | --- | --- |
 | Curve interpolation, clip, sampling | `tests/test_curve.py` |
 | Calibration mapping, clamping, monotonicity | `tests/test_calibration.py` |
+| Monotone-cubic calibration (no overshoot) | `tests/test_calibration_cubic.py` |
+| Calibration Assistant (ppp…fff) | `tests/test_calibration_assistant.py` |
 | C3=60 / C4=60 conversion | `tests/test_pitch.py` |
+| Bar:beat ⇄ tick, time signatures | `tests/test_musictime.py` |
+| Time-signature MIDI round-trip | `tests/test_timesig_midi.py` |
 | Profile JSON load/save | `tests/test_profile.py` |
-| Profile validation (errors vs warnings) | `tests/test_validation.py` |
+| Profile validation | `tests/test_validation.py` |
+| Project validation | `tests/test_project_checks.py` |
+| Example profiles (validator + schema) | `tests/test_example_profiles.py` |
+| JSON Schema files | `tests/test_schema.py` |
 | MIDI round-trip + CC/keyswitch writing | `tests/test_midi_roundtrip.py` |
 | Expression mapper, keyswitch engine, templates | `tests/test_engine.py` |
+| lookAhead | `tests/test_lookahead.py` |
+| Articulation triggers (keyswitch/cc/PC) | `tests/test_triggers.py` |
+| Performance rules (phrases, velocity) | `tests/test_performance.py` |
+| Phrase Painter + macros | `tests/test_painter_macros.py` |
 
 Shared fixtures (example profile, sample MIDI) live in `tests/conftest.py`.
 

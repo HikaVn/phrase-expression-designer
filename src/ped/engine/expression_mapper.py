@@ -9,8 +9,6 @@ Consecutive duplicate CC values are dropped to keep the stream compact.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..core.track import Track
 from ..midi.events import CCEvent
 from ..profiles.instrument_profile import InstrumentProfile
@@ -37,7 +35,8 @@ def map_track_to_cc(
     if end <= start:
         return []
 
-    dt_ms = _ms_per_tick(ppq, bpm) * step_tick
+    ms_per_tick = _ms_per_tick(ppq, bpm)
+    dt_ms = ms_per_tick * step_tick
     events: list[CCEvent] = []
 
     for mapping in profile.cc_mappings:
@@ -51,12 +50,17 @@ def map_track_to_cc(
         calibration = (
             profile.calibration_by_id(mapping.curve_id) if mapping.curve_id else None
         )
+        # lookAhead lets CC anticipate the curve so the library is already moving
+        # by the time the note sounds: read the curve value this many ticks ahead.
+        lookahead_ticks = (
+            int(round(mapping.look_ahead_ms / ms_per_tick)) if mapping.look_ahead_ms else 0
+        )
         samples = curve.sample(start, end, step_tick)
-        norm_values = [v for _, v in samples]
+        norm_values = [curve.value_at(tick + lookahead_ticks) for tick, _ in samples]
         norm_values = one_pole(norm_values, dt_ms, mapping.smoothing_ms)
 
-        last_value: Optional[int] = None
-        for (tick, _), norm in zip(samples, norm_values):
+        last_value: int | None = None
+        for (tick, _), norm in zip(samples, norm_values, strict=True):
             cc_value = calibration.map(norm) if calibration else int(round(norm * 127))
             cc_value = max(0, min(127, cc_value))
             if cc_value != last_value:

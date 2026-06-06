@@ -22,23 +22,29 @@ Instrument Profiles.
   Kontakt libraries.
 - Logic support starts with MIDI export/import, not direct project editing.
 
-## Current State (v0.1.0)
+## Current State
 
-Python prototype implemented and tested (`python -m pytest`, 44 tests green):
+Python prototype implemented and tested (`pytest` 98 tests, `ruff` + `mypy`
+clean; CI on 3.10–3.13):
 
-- Core data models: Note, Phrase, Track, Project, ExpressionCurve.
+- Core data models: Note, Phrase, Track, Project, ExpressionCurve; tempo +
+  time-signature maps; bar:beat ⇄ tick (`core/musictime`).
 - Curve interpolation: linear / smooth / hold, with clip + sampling.
-- CalibrationCurve: normalized 0.0-1.0 -> CC 0-127 (piecewise-linear).
+- CalibrationCurve: normalized 0.0-1.0 -> CC 0-127, linear or Fritsch–Carlson
+  monotone cubic; Calibration Assistant builds curves from ppp…fff tables.
 - InstrumentProfile + Articulation + CCMapping with JSON load/save.
 - C3=60 / C4=60 note-naming handling (`ped.core.pitch`).
-- Profile validation (errors vs warnings).
-- MIDI read/write via `mido`, note timing preserved, input-overwrite guard.
-- Expression mapper (curves -> CC) + keyswitch rule engine.
-- Templates: natural_swell, decrescendo, phrase_arch, soft_entry,
-  breath_ending, delayed_vibrato.
-- CLI: `ped inspect-midi | import-midi | validate-profile | apply-template | export-midi`.
+- Profile validation + project validation; JSON Schema in `schema/`.
+- MIDI read/write via `mido`, note timing preserved, input-overwrite guard,
+  time signatures + program changes.
+- Engine: expression mapper (curves -> CC, lookAhead), articulation rule engine
+  (keyswitch / cc / program_change), performance rules (phrase detection,
+  velocity shaping), phrase painter, macros, single-parameter templates.
+- CLI: `inspect-midi | import-midi | validate-profile | validate-project |
+  apply-template | apply-macro | paint-phrase | calibrate | export-midi`.
 
-See `TODO.md` for what is intentionally unfinished.
+See `TODO.md` for what is intentionally unfinished (audio-analysis calibration,
+DAW exporters, GUI/plugin).
 
 ## Avoid
 

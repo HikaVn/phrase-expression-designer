@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 from .. import SCHEMA_VERSION
 from .articulation import Articulation, CCMapping
@@ -24,7 +24,7 @@ class PlayableRange:
         return {"low": self.low, "high": self.high}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PlayableRange":
+    def from_dict(cls, data: dict[str, Any]) -> PlayableRange:
         return cls(low=int(data["low"]), high=int(data["high"]))
 
 
@@ -32,28 +32,28 @@ class PlayableRange:
 class InstrumentProfile:
     id: str
     schema_version: str = SCHEMA_VERSION
-    engine: Optional[str] = None
-    library: Optional[str] = None
-    patch: Optional[str] = None
+    engine: str | None = None
+    library: str | None = None
+    patch: str | None = None
     note_naming: str = "C3=60"
-    playable_range: Optional[PlayableRange] = None
+    playable_range: PlayableRange | None = None
     articulations: list[Articulation] = field(default_factory=list)
     cc_mappings: list[CCMapping] = field(default_factory=list)
     calibration_curves: list[CalibrationCurve] = field(default_factory=list)
 
-    def articulation_by_id(self, art_id: str) -> Optional[Articulation]:
+    def articulation_by_id(self, art_id: str) -> Articulation | None:
         for art in self.articulations:
             if art.id == art_id:
                 return art
         return None
 
-    def calibration_by_id(self, curve_id: str) -> Optional[CalibrationCurve]:
+    def calibration_by_id(self, curve_id: str) -> CalibrationCurve | None:
         for curve in self.calibration_curves:
             if curve.id == curve_id:
                 return curve
         return None
 
-    def mapping_for(self, parameter: str) -> Optional[CCMapping]:
+    def mapping_for(self, parameter: str) -> CCMapping | None:
         for mapping in self.cc_mappings:
             if mapping.internal_parameter == parameter:
                 return mapping
@@ -76,7 +76,7 @@ class InstrumentProfile:
         return out
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "InstrumentProfile":
+    def from_dict(cls, data: dict[str, Any]) -> InstrumentProfile:
         pr = data.get("playableRange")
         return cls(
             id=data["id"],
@@ -97,9 +97,9 @@ class InstrumentProfile:
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
 
-    def save(self, path: Union[str, Path]) -> None:
+    def save(self, path: str | Path) -> None:
         Path(path).write_text(self.to_json() + "\n", encoding="utf-8")
 
     @classmethod
-    def load(cls, path: Union[str, Path]) -> "InstrumentProfile":
+    def load(cls, path: str | Path) -> InstrumentProfile:
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))

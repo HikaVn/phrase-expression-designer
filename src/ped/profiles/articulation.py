@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 ARTICULATION_TYPES = ("long", "short", "effect")
 TRIGGER_TYPES = ("keyswitch", "cc", "program_change")
@@ -20,12 +20,12 @@ class Trigger:
     """
 
     type: str
-    note: Optional[int] = None
-    note_name: Optional[str] = None
-    mode: Optional[str] = None
-    cc: Optional[int] = None
-    value: Optional[int] = None
-    program: Optional[int] = None
+    note: int | None = None
+    note_name: str | None = None
+    mode: str | None = None
+    cc: int | None = None
+    value: int | None = None
+    program: int | None = None
 
     def __post_init__(self) -> None:
         if self.type not in TRIGGER_TYPES:
@@ -52,7 +52,7 @@ class Trigger:
         return out
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Trigger":
+    def from_dict(cls, data: dict[str, Any]) -> Trigger:
         return cls(
             type=data["type"],
             note=data.get("note"),
@@ -69,8 +69,8 @@ class Articulation:
     id: str
     name: str
     type: str = "long"
-    trigger: Optional[Trigger] = None
-    default_macro: Optional[str] = None
+    trigger: Trigger | None = None
+    default_macro: str | None = None
     expression_behavior: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -84,7 +84,7 @@ class Articulation:
         return out
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Articulation":
+    def from_dict(cls, data: dict[str, Any]) -> Articulation:
         trig = data.get("trigger")
         return cls(
             id=data["id"],
@@ -102,12 +102,12 @@ class CCMapping:
 
     internal_parameter: str
     target: dict[str, Any]  # e.g. {"type": "cc", "cc": 1}
-    curve_id: Optional[str] = None
+    curve_id: str | None = None
     smoothing_ms: float = 0.0
     look_ahead_ms: float = 0.0
 
     @property
-    def cc_number(self) -> Optional[int]:
+    def cc_number(self) -> int | None:
         if self.target.get("type") == "cc":
             return self.target.get("cc")
         return None
@@ -126,7 +126,7 @@ class CCMapping:
         return out
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CCMapping":
+    def from_dict(cls, data: dict[str, Any]) -> CCMapping:
         return cls(
             internal_parameter=data["internalParameter"],
             target=data["target"],

@@ -55,7 +55,7 @@ def test_value_always_clipped():
         CurvePoint(0, 1.0, "linear"),
         CurvePoint(100, 1.0, "linear"),
     ])
-    for tick, value in c.sample(0, 100, 10):
+    for _tick, value in c.sample(0, 100, 10):
         assert 0.0 <= value <= 1.0
 
 

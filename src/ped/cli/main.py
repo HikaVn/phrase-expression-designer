@@ -14,17 +14,24 @@ interpretation and are tracked in TODO.md.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
+from ..core.musictime import position_to_tick
 from ..core.project import Project
 from ..engine.expression_mapper import map_track_to_cc
-from ..engine.rule_engine import generate_keyswitches
+from ..engine.macros import build_macro, macro_names
+from ..engine.performance import apply_velocity_rules, detect_phrases
+from ..engine.phrase_painter import paint
+from ..engine.rule_engine import generate_articulation_events
 from ..engine.templates import build_curve, template_names
 from ..midi.reader import read_midi
 from ..midi.writer import write_midi
+from ..profiles.calibration_assistant import build_from_dynamics, parse_levels
 from ..profiles.instrument_profile import InstrumentProfile
 from ..profiles.validation import validate_profile
+from ..project_checks import validate_project_dict
 
 
 def _cmd_inspect_midi(args: argparse.Namespace) -> int:
@@ -64,15 +71,46 @@ def _cmd_validate_profile(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_validate_project(args: argparse.Namespace) -> int:
+    data = json.loads(Path(args.project).read_text(encoding="utf-8"))
+    profile = InstrumentProfile.load(args.profile) if args.profile else None
+    report = validate_project_dict(data, profile)
+    for issue in report.issues:
+        print(issue)
+    if report.ok:
+        print(f"OK: project valid ({len(report.warnings)} warning(s)).")
+        return 0
+    print(f"FAILED: {len(report.errors)} error(s), {len(report.warnings)} warning(s).")
+    return 1
+
+
+def _cmd_calibrate(args: argparse.Namespace) -> int:
+    curve = build_from_dynamics(args.id, parse_levels(args.levels), interpolation=args.interp)
+    if args.profile:
+        profile = InstrumentProfile.load(args.profile)
+        profile.calibration_curves = [
+            c for c in profile.calibration_curves if c.id != curve.id
+        ] + [curve]
+        profile.save(args.profile)
+        print(f"Added calibration curve {curve.id!r} to {args.profile}.")
+    else:
+        text = json.dumps(curve.to_dict(), indent=2, ensure_ascii=False)
+        if args.output:
+            Path(args.output).write_text(text + "\n", encoding="utf-8")
+            print(f"Wrote calibration curve to {args.output}.")
+        else:
+            print(text)
+    return 0
+
+
 def _cmd_apply_template(args: argparse.Namespace) -> int:
     project = Project.load(args.project)
     track = project.track_by_name(args.track)
     if track is None:
         print(f"error: no track named {args.track!r} in {args.project}", file=sys.stderr)
         return 2
-    start, end = args.start, args.end
-    if end is None:
-        _s, end = track.tick_span()
+
+    start, end = _resolve_range(args, project, track)
     curve_id = args.curve_id or f"curve_{args.template}_{start}_{end}"
     curve = build_curve(args.template, curve_id, start, end)
     track.expression_curves.append(curve)
@@ -85,6 +123,75 @@ def _cmd_apply_template(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_range(args: argparse.Namespace, project: Project, track) -> tuple[int, int]:
+    ts_map = project.time_signature_map
+    start_pos = getattr(args, "start_pos", None)
+    end_pos = getattr(args, "end_pos", None)
+    start = position_to_tick(start_pos, project.ppq, ts_map) if start_pos else args.start
+    if end_pos:
+        end = position_to_tick(end_pos, project.ppq, ts_map)
+    elif args.end is not None:
+        end = args.end
+    else:
+        _s, end = track.tick_span()
+    return start, end
+
+
+def _add_range_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--start", type=int, default=0, help="start tick (default 0)")
+    p.add_argument("--end", type=int, default=None, help="end tick (default: track end)")
+    p.add_argument("--start-pos", help="start as bar:beat[:tick] (overrides --start)")
+    p.add_argument("--end-pos", help="end as bar:beat[:tick] (overrides --end)")
+
+
+def _cmd_apply_macro(args: argparse.Namespace) -> int:
+    project = Project.load(args.project)
+    track = project.track_by_name(args.track)
+    if track is None:
+        print(f"error: no track named {args.track!r} in {args.project}", file=sys.stderr)
+        return 2
+    start, end = _resolve_range(args, project, track)
+    curves = build_macro(args.macro, f"macro_{args.macro}_{start}", start, end)
+    track.expression_curves.extend(curves)
+    out = Path(args.output) if args.output else Path(args.project)
+    project.save(out)
+    params = ", ".join(c.parameter for c in curves)
+    print(
+        f"Applied macro {args.macro!r} ({len(curves)} curves: {params}) to track "
+        f"{track.name!r} over ticks {start}-{end}. Wrote {out}."
+    )
+    return 0
+
+
+def _cmd_paint_phrase(args: argparse.Namespace) -> int:
+    project = Project.load(args.project)
+    track = project.track_by_name(args.track)
+    if track is None:
+        print(f"error: no track named {args.track!r} in {args.project}", file=sys.stderr)
+        return 2
+    source = track.curve_for(args.source)
+    if source is None:
+        print(
+            f"error: track {args.track!r} has no {args.source!r} curve to paint from",
+            file=sys.stderr,
+        )
+        return 2
+    derived = paint(source)
+    derived_params = {c.parameter for c in derived}
+    # Replace any existing curves for the derived parameters.
+    track.expression_curves = [
+        c for c in track.expression_curves if c.parameter not in derived_params
+    ] + derived
+    out = Path(args.output) if args.output else Path(args.project)
+    project.save(out)
+    params = ", ".join(c.parameter for c in derived)
+    print(
+        f"Painted {len(derived)} curves from {args.source!r} ({params}) on track "
+        f"{track.name!r}. Wrote {out}."
+    )
+    return 0
+
+
 def _cmd_export_midi(args: argparse.Namespace) -> int:
     project = Project.load(args.project)
     profile = InstrumentProfile.load(args.profile)
@@ -92,25 +199,39 @@ def _cmd_export_midi(args: argparse.Namespace) -> int:
 
     cc_by_track: dict[int, list] = {}
     ks_by_track: dict[int, list] = {}
-    total_cc = total_ks = 0
+    pc_by_track: dict[int, list] = {}
+    total_cc = total_ks = total_pc = 0
     for index, track in enumerate(project.tracks):
+        if args.perform:
+            detect_phrases(track, project.ppq)
+            apply_velocity_rules(track, profile, project.ppq, project.time_signature_map)
+
         cc = map_track_to_cc(track, profile, ppq=project.ppq, bpm=bpm)
-        ks = generate_keyswitches(track, profile)
-        if cc:
-            cc_by_track[index] = cc
-            total_cc += len(cc)
-        if ks:
-            ks_by_track[index] = ks
-            total_ks += len(ks)
+        arts = generate_articulation_events(track, profile)
+        # Articulation CC switches and expression CC share the stream.
+        merged_cc = sorted(cc + arts.cc_events)
+        if merged_cc:
+            cc_by_track[index] = merged_cc
+            total_cc += len(merged_cc)
+        if arts.keyswitches:
+            ks_by_track[index] = arts.keyswitches
+            total_ks += len(arts.keyswitches)
+        if arts.program_changes:
+            pc_by_track[index] = arts.program_changes
+            total_pc += len(arts.program_changes)
 
     write_midi(
         project,
         args.output,
         cc_events=cc_by_track,
         keyswitches=ks_by_track,
+        program_changes=pc_by_track,
         input_path=args.project,
     )
-    print(f"Wrote {args.output}: {total_cc} CC event(s), {total_ks} keyswitch(es).")
+    print(
+        f"Wrote {args.output}: {total_cc} CC event(s), {total_ks} keyswitch(es), "
+        f"{total_pc} program change(s)."
+    )
     return 0
 
 
@@ -132,20 +253,59 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("file")
     p.set_defaults(func=_cmd_validate_profile)
 
+    p = sub.add_parser("validate-project", help="validate a project JSON (structure + refs)")
+    p.add_argument("project")
+    p.add_argument("--profile", help="optional profile JSON to cross-check against")
+    p.set_defaults(func=_cmd_validate_project)
+
+    p = sub.add_parser("calibrate", help="build a calibration curve from dynamic levels")
+    p.add_argument("--id", required=True, help="calibration curve id")
+    p.add_argument(
+        "--levels",
+        required=True,
+        help="dynamic table, e.g. 'ppp=8,p=35,mf=68,ff=110,fff=120'",
+    )
+    p.add_argument("--interp", default="monotonic", choices=["linear", "monotonic"])
+    p.add_argument("--profile", help="profile JSON to add/replace the curve in")
+    p.add_argument("-o", "--output", help="write the curve JSON here (else stdout)")
+    p.set_defaults(func=_cmd_calibrate)
+
     p = sub.add_parser("apply-template", help="add a template expression curve to a track")
     p.add_argument("template", choices=template_names())
     p.add_argument("--project", required=True, help="project JSON path")
     p.add_argument("--track", required=True, help="track name")
-    p.add_argument("--start", type=int, default=0, help="start tick (default 0)")
-    p.add_argument("--end", type=int, default=None, help="end tick (default: track end)")
+    _add_range_args(p)
     p.add_argument("--curve-id", help="explicit curve id")
     p.add_argument("-o", "--output", help="output project JSON (default: in place)")
     p.set_defaults(func=_cmd_apply_template)
+
+    p = sub.add_parser("apply-macro", help="apply a multi-parameter expression macro")
+    p.add_argument("macro", choices=macro_names())
+    p.add_argument("--project", required=True, help="project JSON path")
+    p.add_argument("--track", required=True, help="track name")
+    _add_range_args(p)
+    p.add_argument("-o", "--output", help="output project JSON (default: in place)")
+    p.set_defaults(func=_cmd_apply_macro)
+
+    p = sub.add_parser(
+        "paint-phrase",
+        help="derive related curves (volume/vibrato/timbre) from one intent line",
+    )
+    p.add_argument("--project", required=True, help="project JSON path")
+    p.add_argument("--track", required=True, help="track name")
+    p.add_argument("--source", default="intensity", help="source parameter (default intensity)")
+    p.add_argument("-o", "--output", help="output project JSON (default: in place)")
+    p.set_defaults(func=_cmd_paint_phrase)
 
     p = sub.add_parser("export-midi", help="project JSON + profile -> MIDI with CC/keyswitches")
     p.add_argument("--project", required=True, help="project JSON path")
     p.add_argument("--profile", required=True, help="instrument profile JSON path")
     p.add_argument("-o", "--output", required=True, help="output MIDI path")
+    p.add_argument(
+        "--perform",
+        action="store_true",
+        help="apply performance rules (phrase detection + velocity shaping)",
+    )
     p.set_defaults(func=_cmd_export_midi)
 
     return parser

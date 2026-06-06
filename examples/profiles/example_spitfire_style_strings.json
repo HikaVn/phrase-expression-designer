@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "example_spitfire_style_strings_vln1",
+  "engine": "Spitfire Player",
+  "library": "Example Spitfire-style Strings",
+  "patch": "Violins 1 - Long",
+  "noteNaming": "C4=60",
+  "playableRange": { "low": 55, "high": 100 },
+  "articulations": [
+    {
+      "id": "long",
+      "name": "Long",
+      "type": "long",
+      "trigger": { "type": "keyswitch", "note": 24, "noteName": "C1", "mode": "latch" },
+      "defaultMacro": "cinematic_rise",
+      "expressionBehavior": { "velocityRole": "secondary", "ccRole": "primary" }
+    },
+    {
+      "id": "long_cs",
+      "name": "Long Con Sordino",
+      "type": "long",
+      "trigger": { "type": "keyswitch", "note": 25, "noteName": "C#1", "mode": "latch" },
+      "expressionBehavior": { "velocityRole": "secondary", "ccRole": "primary" }
+    },
+    {
+      "id": "spiccato",
+      "name": "Spiccato",
+      "type": "short",
+      "trigger": { "type": "keyswitch", "note": 26, "noteName": "D1", "mode": "latch" },
+      "expressionBehavior": { "velocityRole": "primary", "ccRole": "secondary" }
+    },
+    {
+      "id": "tremolo",
+      "name": "Tremolo",
+      "type": "long",
+      "trigger": { "type": "keyswitch", "note": 27, "noteName": "D#1", "mode": "latch" },
+      "expressionBehavior": { "velocityRole": "secondary", "ccRole": "primary" }
+    }
+  ],
+  "ccMappings": [
+    {
+      "internalParameter": "intensity",
+      "target": { "type": "cc", "cc": 1 },
+      "curveId": "spitfire_dynamics",
+      "smoothingMs": 50,
+      "lookAheadMs": 100
+    },
+    {
+      "internalParameter": "volume",
+      "target": { "type": "cc", "cc": 11 },
+      "curveId": "spitfire_expression",
+      "smoothingMs": 40
+    },
+    {
+      "internalParameter": "vibratoDepth",
+      "target": { "type": "cc", "cc": 21 },
+      "curveId": "linear_full"
+    },
+    {
+      "internalParameter": "timbre",
+      "target": { "type": "cc", "cc": 74 },
+      "curveId": "linear_full",
+      "smoothingMs": 40
+    }
+  ],
+  "calibrationCurves": [
+    {
+      "id": "spitfire_dynamics",
+      "inputRange": [0.0, 1.0],
+      "outputRange": [0, 127],
+      "interpolation": "monotonic",
+      "points": [
+        { "input": 0.0, "output": 10 },
+        { "input": 0.25, "output": 40 },
+        { "input": 0.5, "output": 72 },
+        { "input": 0.75, "output": 100 },
+        { "input": 1.0, "output": 126 }
+      ]
+    },
+    {
+      "id": "spitfire_expression",
+      "inputRange": [0.0, 1.0],
+      "outputRange": [0, 127],
+      "interpolation": "monotonic",
+      "points": [
+        { "input": 0.0, "output": 25 },
+        { "input": 0.5, "output": 88 },
+        { "input": 1.0, "output": 127 }
+      ]
+    },
+    {
+      "id": "linear_full",
+      "inputRange": [0.0, 1.0],
+      "outputRange": [0, 127],
+      "interpolation": "linear",
+      "points": [
+        { "input": 0.0, "output": 0 },
+        { "input": 1.0, "output": 127 }
+      ]
+    }
+  ]
+}
