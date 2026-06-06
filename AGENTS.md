@@ -1,0 +1,78 @@
+# AGENTS.md
+
+## Project
+
+Phrase Expression Designer is a tool for designing musical expression curves
+for sustained virtual instruments, especially strings. It converts high-level
+performance intent such as intensity, timbre, vibrato, attack, release, bow
+pressure, and phrase flow into MIDI CC, velocity, keyswitches, and articulation
+outputs using instrument-specific profiles.
+
+## Core Rule
+
+Never store instrument-specific CC values directly as the primary musical data.
+Store performance intent first, then convert through Instrument Profiles.
+
+## Current Priority
+
+Focus on the DAW-independent core:
+
+1. Data models
+2. MIDI import/export
+3. Expression curves
+4. Calibration curves
+5. Instrument profiles
+6. Kontakt profile support
+7. Validation
+8. Tests
+
+Do not prioritize AU/VST plugin code until the core is stable.
+
+## Do Not
+
+- Do not edit Logic project files directly.
+- Do not modify Kontakt internal preset files.
+- Do not reverse engineer protected libraries.
+- Do not automate plugin GUI clicks as a core feature.
+- Do not put DAW-specific logic into the core engine.
+- Do not change MIDI note timing unless explicitly required.
+- Do not output CC outside 0-127.
+- Do not overwrite user input files by default.
+
+## Testing
+
+Run the test suite after changes (`python -m pytest`). Add tests for all core
+transformations:
+
+- Curve interpolation
+- Calibration mapping
+- CC conversion
+- MIDI roundtrip
+- Keyswitch generation
+- Profile validation
+- C3=60/C4=60 conversion
+
+## Architecture
+
+Keep the architecture layered:
+
+- `core`: DAW-independent musical data
+- `profiles`: instrument-specific mappings
+- `midi`: MIDI parsing and writing
+- `engine`: expression mapping and rules
+- `profiles/validation.py`: profile and output checks
+- `cli`: user commands
+- `app/plugin`: future UI and DAW integration
+
+## Documentation
+
+Update docs when behavior changes. See `docs/ARCHITECTURE.md` and
+`docs/DATA_FORMAT.md`.
+
+## Getting Oriented (first session)
+
+1. Read this file and `docs/ARCHITECTURE.md`.
+2. Run `python -m pytest`; all tests should pass.
+3. Pick the highest-priority open item from `TODO.md`.
+4. Implement it as a small change with tests. Keep intent / instrument-mapping
+   separation intact.
