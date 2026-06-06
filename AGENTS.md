@@ -8,24 +8,6 @@ performance intent such as intensity, timbre, vibrato, attack, release, bow
 pressure, and phrase flow into MIDI CC, velocity, keyswitches, and articulation
 outputs using instrument-specific profiles.
 
-## Working Style — Teach While Building (REQUIRED)
-
-The repository owner is learning as the project is built. **Explain as you
-work.** This applies to *every* task, not just when asked.
-
-For each non-trivial step:
-- **Term** — define the jargon you use (CC, keyswitch, articulation, monotone
-  cubic, AU/VST3, ticks/PPQ, etc.) in plain language the first time it appears.
-- **Principle / how it works** — briefly say *why* it works, not just *what* the
-  code does.
-- **Purpose** — connect the change to the user's goal (why it matters musically
-  or for the product).
-
-Keep explanations short and concrete; favor a one-line "what this is / why" over
-silence. When introducing a design choice, state the trade-off. Prefer teaching
-in the chat reply; keep code comments at the normal level. Do not assume prior
-knowledge of DSP, MIDI internals, C++/JUCE, or Python packaging.
-
 ## Core Rule
 
 Never store instrument-specific CC values directly as the primary musical data.
