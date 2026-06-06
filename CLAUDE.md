@@ -6,6 +6,16 @@ You are helping develop **Phrase Expression Designer**, a DAW-independent core
 tool for generating musical expression control data for string and sustained
 virtual instruments.
 
+## Working Style — Teach While Building (REQUIRED)
+
+The owner is learning as the project grows. In **every** task, explain as you
+go: define the **terms/jargon** you use (in plain language, first time they
+appear), give the **principle / how it works**, and tie it to the **purpose**
+(why it matters for the music or the product). State trade-offs when you make a
+design choice. Keep it short and concrete — a one-line "what / why" beats
+silence. Don't assume prior knowledge of DSP, MIDI internals, C++/JUCE, or
+Python packaging. (Mirrored in AGENTS.md for the Codex phase.)
+
 ## Goal
 
 Build the core first. The core should allow users to describe musical
