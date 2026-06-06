@@ -1,7 +1,7 @@
 # Testing
 
 ```bash
-python -m pytest          # full suite (98 tests)
+python -m pytest          # full suite (116 tests)
 python -m pytest -k pitch # a subset
 ruff check src tests      # lint
 mypy                      # type check
@@ -14,7 +14,12 @@ mypy                      # type check
 | Curve interpolation, clip, sampling | `tests/test_curve.py` |
 | Calibration mapping, clamping, monotonicity | `tests/test_calibration.py` |
 | Monotone-cubic calibration (no overshoot) | `tests/test_calibration_cubic.py` |
+| Decreasing monotone-cubic | `tests/test_calibration_decreasing.py` |
 | Calibration Assistant (ppp…fff) | `tests/test_calibration_assistant.py` |
+| Auto-calibration (measured response inversion) | `tests/test_calibration_auto.py` |
+| Per-mapping CC sampling resolution | `tests/test_step_tick.py` |
+| Legato note-overlap shaping | `tests/test_legato_overlap.py` |
+| Logic/Cubase articulation exporters | `tests/test_exporters.py` |
 | C3=60 / C4=60 conversion | `tests/test_pitch.py` |
 | Bar:beat ⇄ tick, time signatures | `tests/test_musictime.py` |
 | Time-signature MIDI round-trip | `tests/test_timesig_midi.py` |

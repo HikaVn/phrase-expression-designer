@@ -122,12 +122,14 @@ resolve to MIDI numbers (see `docs/KONTAKT_PROFILE.md`).
   "target": { "type": "cc", "cc": 1 },
   "curveId": "dynamic_curve_default",
   "smoothingMs": 40,
-  "lookAheadMs": 80
+  "lookAheadMs": 80,
+  "stepTick": 60
 }
 ```
 
-`target.type` is `"cc"` for now (`keyswitch` / `program_change` reserved).
-`lookAheadMs` is stored but not yet applied — see `TODO.md`.
+`target.type` is `"cc"` for CC output. `lookAheadMs` makes the CC anticipate the
+curve. `stepTick` (optional) overrides the CC sampling resolution for this
+mapping; omit it to use the mapper default.
 
 ## CalibrationCurve
 

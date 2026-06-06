@@ -68,7 +68,9 @@ ped calibrate --id dyn --levels "ppp=8,p=35,mf=68,ff=110,fff=120" \
 | `apply-macro` | Add a multi-parameter macro (emotional_swell, cinematic_rise, …) |
 | `paint-phrase` | Derive volume/vibrato/timbre curves from one intent line |
 | `calibrate` | Build a calibration curve from a ppp…fff table |
-| `export-midi` | Project + profile → MIDI with CC/keyswitches/program changes (`--perform` for velocity shaping) |
+| `calibrate-auto` | Invert a measured CC→loudness response into a calibration curve |
+| `export-articulations` | Export a profile's articulations as a Logic / Cubase map |
+| `export-midi` | Project + profile → MIDI with CC/keyswitches/program changes (`--perform` for velocity shaping + legato) |
 
 ## How it fits together
 
@@ -94,6 +96,7 @@ src/ped/
   profiles/  instrument_profile, articulation, calibration, calibration_assistant, validation
   midi/      reader, writer, events  (mido)
   engine/    expression_mapper, rule_engine, performance, phrase_painter, macros, templates, smoothing
+  exporters/ logic (Articulation Set), cubase (Expression Map)
   cli/       main  (the `ped` command)
   project_checks.py   project-level validation
 schema/      JSON Schema for project + instrument profile
@@ -102,7 +105,7 @@ schema/      JSON Schema for project + instrument profile
 ## Tests & checks
 
 ```bash
-python -m pytest          # 98 tests
+python -m pytest          # 116 tests
 ruff check src tests      # lint
 mypy                      # type check
 ```

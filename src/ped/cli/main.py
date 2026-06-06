@@ -22,13 +22,20 @@ from ..core.musictime import position_to_tick
 from ..core.project import Project
 from ..engine.expression_mapper import map_track_to_cc
 from ..engine.macros import build_macro, macro_names
-from ..engine.performance import apply_velocity_rules, detect_phrases
+from ..engine.performance import apply_legato_overlap, apply_velocity_rules, detect_phrases
 from ..engine.phrase_painter import paint
 from ..engine.rule_engine import generate_articulation_events
 from ..engine.templates import build_curve, template_names
+from ..exporters.cubase import export_cubase_expression_map
+from ..exporters.logic import export_logic_articulation_set
 from ..midi.reader import read_midi
 from ..midi.writer import write_midi
-from ..profiles.calibration_assistant import build_from_dynamics, parse_levels
+from ..profiles.calibration_assistant import (
+    build_from_dynamics,
+    build_from_measurements,
+    parse_levels,
+    parse_measurements,
+)
 from ..profiles.instrument_profile import InstrumentProfile
 from ..profiles.validation import validate_profile
 from ..project_checks import validate_project_dict
@@ -84,22 +91,48 @@ def _cmd_validate_project(args: argparse.Namespace) -> int:
     return 1
 
 
-def _cmd_calibrate(args: argparse.Namespace) -> int:
-    curve = build_from_dynamics(args.id, parse_levels(args.levels), interpolation=args.interp)
-    if args.profile:
-        profile = InstrumentProfile.load(args.profile)
+def _emit_calibration(curve, profile_path: str | None, output: str | None) -> int:
+    if profile_path:
+        profile = InstrumentProfile.load(profile_path)
         profile.calibration_curves = [
             c for c in profile.calibration_curves if c.id != curve.id
         ] + [curve]
-        profile.save(args.profile)
-        print(f"Added calibration curve {curve.id!r} to {args.profile}.")
+        profile.save(profile_path)
+        print(f"Added calibration curve {curve.id!r} to {profile_path}.")
     else:
         text = json.dumps(curve.to_dict(), indent=2, ensure_ascii=False)
-        if args.output:
-            Path(args.output).write_text(text + "\n", encoding="utf-8")
-            print(f"Wrote calibration curve to {args.output}.")
+        if output:
+            Path(output).write_text(text + "\n", encoding="utf-8")
+            print(f"Wrote calibration curve to {output}.")
         else:
             print(text)
+    return 0
+
+
+def _cmd_calibrate(args: argparse.Namespace) -> int:
+    curve = build_from_dynamics(args.id, parse_levels(args.levels), interpolation=args.interp)
+    return _emit_calibration(curve, args.profile, args.output)
+
+
+def _cmd_calibrate_auto(args: argparse.Namespace) -> int:
+    curve = build_from_measurements(
+        args.id, parse_measurements(args.measure), interpolation=args.interp
+    )
+    return _emit_calibration(curve, args.profile, args.output)
+
+
+def _cmd_export_articulations(args: argparse.Namespace) -> int:
+    profile = InstrumentProfile.load(args.profile)
+    if args.format == "logic":
+        export_logic_articulation_set(profile, args.output)
+        kind = "Logic Articulation Set"
+    else:
+        export_cubase_expression_map(profile, args.output)
+        kind = "Cubase Expression Map"
+    print(
+        f"Wrote {kind} for {profile.id!r} ({len(profile.articulations)} articulations) "
+        f"to {args.output}."
+    )
     return 0
 
 
@@ -205,6 +238,7 @@ def _cmd_export_midi(args: argparse.Namespace) -> int:
         if args.perform:
             detect_phrases(track, project.ppq)
             apply_velocity_rules(track, profile, project.ppq, project.time_signature_map)
+            apply_legato_overlap(track, profile)
 
         cc = map_track_to_cc(track, profile, ppq=project.ppq, bpm=bpm)
         arts = generate_articulation_events(track, profile)
@@ -258,6 +292,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--profile", help="optional profile JSON to cross-check against")
     p.set_defaults(func=_cmd_validate_project)
 
+    p = sub.add_parser(
+        "export-articulations",
+        help="export a profile's articulations as a Logic or Cubase map",
+    )
+    p.add_argument("--profile", required=True, help="instrument profile JSON path")
+    p.add_argument("--format", required=True, choices=["logic", "cubase"])
+    p.add_argument("-o", "--output", required=True, help="output map path")
+    p.set_defaults(func=_cmd_export_articulations)
+
     p = sub.add_parser("calibrate", help="build a calibration curve from dynamic levels")
     p.add_argument("--id", required=True, help="calibration curve id")
     p.add_argument(
@@ -269,6 +312,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--profile", help="profile JSON to add/replace the curve in")
     p.add_argument("-o", "--output", help="write the curve JSON here (else stdout)")
     p.set_defaults(func=_cmd_calibrate)
+
+    p = sub.add_parser(
+        "calibrate-auto",
+        help="invert a measured CC->loudness response into a calibration curve",
+    )
+    p.add_argument("--id", required=True, help="calibration curve id")
+    p.add_argument(
+        "--measure",
+        required=True,
+        help="measured response, e.g. '0=-60,32=-40,64=-28,96=-18,127=-10' (cc=level)",
+    )
+    p.add_argument("--interp", default="monotonic", choices=["linear", "monotonic"])
+    p.add_argument("--profile", help="profile JSON to add/replace the curve in")
+    p.add_argument("-o", "--output", help="write the curve JSON here (else stdout)")
+    p.set_defaults(func=_cmd_calibrate_auto)
 
     p = sub.add_parser("apply-template", help="add a template expression curve to a track")
     p.add_argument("template", choices=template_names())

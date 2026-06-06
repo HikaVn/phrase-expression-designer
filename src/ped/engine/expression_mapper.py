@@ -36,7 +36,6 @@ def map_track_to_cc(
         return []
 
     ms_per_tick = _ms_per_tick(ppq, bpm)
-    dt_ms = ms_per_tick * step_tick
     events: list[CCEvent] = []
 
     for mapping in profile.cc_mappings:
@@ -47,6 +46,10 @@ def map_track_to_cc(
         if curve is None:
             continue
 
+        # Per-mapping sampling resolution overrides the call-level default.
+        m_step = mapping.step_tick if mapping.step_tick and mapping.step_tick > 0 else step_tick
+        dt_ms = ms_per_tick * m_step
+
         calibration = (
             profile.calibration_by_id(mapping.curve_id) if mapping.curve_id else None
         )
@@ -55,7 +58,7 @@ def map_track_to_cc(
         lookahead_ticks = (
             int(round(mapping.look_ahead_ms / ms_per_tick)) if mapping.look_ahead_ms else 0
         )
-        samples = curve.sample(start, end, step_tick)
+        samples = curve.sample(start, end, m_step)
         norm_values = [curve.value_at(tick + lookahead_ticks) for tick, _ in samples]
         norm_values = one_pole(norm_values, dt_ms, mapping.smoothing_ms)
 

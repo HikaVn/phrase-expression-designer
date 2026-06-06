@@ -5,6 +5,7 @@ data. These rules mutate a Track in place (and return it) so they compose:
 
     detect_phrases(track, ppq)
     apply_velocity_rules(track, profile, ppq, ts_map)
+    apply_legato_overlap(track, profile)
 
 Rules implemented:
   * rest-based phrase detection (gap larger than a threshold starts a new phrase)
@@ -13,6 +14,7 @@ Rules implemented:
   * strong-beat (bar downbeat) accent
   * phrase-end release (soften the last note of a phrase)
   * legato/slur re-attack suppression (soften connected same-articulation notes)
+  * note-level legato overlap (extend connected long notes to overlap the next)
 """
 
 from __future__ import annotations
@@ -34,6 +36,12 @@ class VelocityRules:
     phrase_end_release: float = 0.85  # multiplier on the last note of a phrase
     slur_softening: float = 0.85      # multiplier on connected long notes
     slur_gap_ticks: int = 5    # max gap to count as "connected"
+
+
+@dataclass
+class LegatoRules:
+    connect_gap_ticks: int = 30   # max gap between long notes to connect
+    overlap_ticks: int = 20       # how far the earlier note reaches into the next
 
 
 def _clamp_vel(v: float) -> int:
@@ -129,4 +137,35 @@ def apply_velocity_rules(
         note.velocity = _clamp_vel(vel)
         prev = (note, art)
 
+    return track
+
+
+def apply_legato_overlap(
+    track: Track,
+    profile: InstrumentProfile,
+    rules: LegatoRules | None = None,
+) -> Track:
+    """Extend connected long notes so they overlap the next, for legato connection.
+
+    For each pair of consecutive same-articulation ``long`` notes whose gap is
+    within ``connect_gap_ticks``, the earlier note's duration is extended so it
+    reaches ``overlap_ticks`` into the next note (never past the next note's end).
+    Mutates and returns ``track``.
+    """
+    rules = rules or LegatoRules()
+    notes = sorted(track.notes, key=lambda n: n.start_tick)
+    for cur, nxt in zip(notes, notes[1:], strict=False):
+        cur_art = profile.articulation_by_id(cur.articulation_id) if cur.articulation_id else None
+        nxt_art = profile.articulation_by_id(nxt.articulation_id) if nxt.articulation_id else None
+        if (
+            cur_art is not None
+            and nxt_art is not None
+            and cur_art.type == "long"
+            and nxt_art.type == "long"
+            and cur.articulation_id == nxt.articulation_id
+            and 0 <= nxt.start_tick - cur.end_tick <= rules.connect_gap_ticks
+        ):
+            target_end = min(nxt.start_tick + rules.overlap_ticks, nxt.end_tick - 1)
+            if target_end > cur.end_tick:
+                cur.duration_tick = target_end - cur.start_tick
     return track

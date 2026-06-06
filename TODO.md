@@ -45,19 +45,26 @@ resolves an item.
 - License choice.
 - AI-assist: local vs external API.
 
-## Remaining core / future work
+## Done in this pass
 
-- [ ] Audio-analysis calibration (CC sweep playback + RMS/LUFS/spectral-centroid)
-      to auto-suggest calibration values — the automatic half of §9.5.
-- [ ] Monotone-cubic for `outputRange` inversion (decreasing curves) — currently
-      assumes non-decreasing nodes for the "no overshoot" guarantee.
-- [ ] Slur/legato re-attack handled at the *note* level (note-overlap shaping),
-      not just velocity softening.
-- [ ] Logic Articulation Set / Cubase Expression Map exporters (Roadmap v0.4).
-- [ ] GUI (Roadmap v0.2+), macOS app, AU MIDI FX / VST3 (do NOT start before the
-      core is locked).
-- [ ] Tempo-aware `smoothingMs` already done; consider per-mapping curve sampling
-      resolution override.
+- [x] Logic Articulation Set + Cubase Expression Map exporters
+      (`ped export-articulations`, `ped/exporters/`).
+- [x] Decreasing monotone-cubic calibration verified + tested (Fritsch–Carlson
+      handles increasing and decreasing monotonic nodes; clamp uses output range).
+- [x] Note-level legato overlap shaping (`apply_legato_overlap`).
+- [x] Per-mapping CC sampling resolution override (`stepTick` on CCMapping).
+- [x] Auto-calibration framework: invert a measured CC→loudness response into a
+      calibration curve (`build_from_measurements`, `ped calibrate-auto`).
+
+## Remaining future work
+
+- [ ] **Audio decode/level extraction** for `calibrate-auto` — feed it real RMS/
+      LUFS/spectral-centroid measured from rendered audio (CC sweep playback +
+      analysis). The inversion framework is done; only the audio front-end is
+      future. Out of MVP per spec §11.2.
+- [ ] Refine exported Logic/Cubase maps toward exact, version-specific schemas.
+- [ ] GUI (Roadmap v0.2+), macOS app, AU MIDI FX / VST3 — **do NOT start before
+      the core is locked** (spec §7.1, §20).
 
 ## Notes for the Codex phase
 

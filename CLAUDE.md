@@ -24,7 +24,7 @@ Instrument Profiles.
 
 ## Current State
 
-Python prototype implemented and tested (`pytest` 98 tests, `ruff` + `mypy`
+Python prototype implemented and tested (`pytest` 116 tests, `ruff` + `mypy`
 clean; CI on 3.10–3.13):
 
 - Core data models: Note, Phrase, Track, Project, ExpressionCurve; tempo +
@@ -37,14 +37,21 @@ clean; CI on 3.10–3.13):
 - Profile validation + project validation; JSON Schema in `schema/`.
 - MIDI read/write via `mido`, note timing preserved, input-overwrite guard,
   time signatures + program changes.
-- Engine: expression mapper (curves -> CC, lookAhead), articulation rule engine
-  (keyswitch / cc / program_change), performance rules (phrase detection,
-  velocity shaping), phrase painter, macros, single-parameter templates.
+- Engine: expression mapper (curves -> CC, lookAhead, per-mapping stepTick),
+  articulation rule engine (keyswitch / cc / program_change), performance rules
+  (phrase detection, velocity shaping, note-level legato overlap), phrase
+  painter, macros, single-parameter templates.
+- Calibration: linear / monotone-cubic (increasing & decreasing); assistant
+  builds curves from ppp…fff tables or by inverting a measured CC→loudness
+  response.
+- Exporters: Logic Articulation Set (.plist) + Cubase Expression Map.
 - CLI: `inspect-midi | import-midi | validate-profile | validate-project |
-  apply-template | apply-macro | paint-phrase | calibrate | export-midi`.
+  apply-template | apply-macro | paint-phrase | calibrate | calibrate-auto |
+  export-articulations | export-midi`.
 
-See `TODO.md` for what is intentionally unfinished (audio-analysis calibration,
-DAW exporters, GUI/plugin).
+See `TODO.md` for what is intentionally unfinished: audio decode/level
+extraction for calibrate-auto, exact DAW-schema refinement, and GUI/plugin
+(deferred until the core is locked).
 
 ## Avoid
 

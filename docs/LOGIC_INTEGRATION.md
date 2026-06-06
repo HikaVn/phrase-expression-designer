@@ -18,11 +18,30 @@ file-based:
 The tool never edits the Logic project directly — only MIDI files you export and
 re-import.
 
+## Articulation Set export (available)
+
+Generate a Logic-style Articulation Set plist from a profile:
+
+```bash
+ped export-articulations --profile examples/profiles/example_kontakt_strings_vln1.json \
+    --format logic -o "My Set.plist"
+```
+
+This writes a valid `.plist` capturing each articulation's name, id, and
+keyswitch note (resolved via the profile's `noteNaming`). It is a **starting
+point** to import into Logic's Articulation Set editor — Logic's full schema is
+version-specific, so review the switch rows after importing. No Logic project is
+edited (spec §17.2).
+
+Cubase users can export the same data as an Expression Map:
+
+```bash
+ped export-articulations --profile <profile>.json --format cubase -o map.expressionmap
+```
+
 ## Next steps (planned)
 
-- Export a Logic **Articulation Set**-equivalent description from a profile's
-  articulation list (names, ids, keyswitch notes).
-- Tidy articulation naming/ids for easy mapping into Logic.
+- Refine the exported maps toward exact Logic/Cubase schemas per DAW version.
 - Technical spike on **AU MIDI FX** for in-DAW, real-time CC generation.
 
 ## Future

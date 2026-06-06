@@ -2,7 +2,13 @@
 
 from .expression_mapper import map_track_to_cc
 from .macros import build_macro, macro_names
-from .performance import VelocityRules, apply_velocity_rules, detect_phrases
+from .performance import (
+    LegatoRules,
+    VelocityRules,
+    apply_legato_overlap,
+    apply_velocity_rules,
+    detect_phrases,
+)
 from .phrase_painter import DEFAULT_TARGETS, PaintTarget, paint
 from .rule_engine import (
     ArticulationEvents,
@@ -19,7 +25,9 @@ __all__ = [
     "ArticulationEvents",
     "detect_phrases",
     "apply_velocity_rules",
+    "apply_legato_overlap",
     "VelocityRules",
+    "LegatoRules",
     "paint",
     "PaintTarget",
     "DEFAULT_TARGETS",

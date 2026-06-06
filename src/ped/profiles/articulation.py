@@ -105,6 +105,7 @@ class CCMapping:
     curve_id: str | None = None
     smoothing_ms: float = 0.0
     look_ahead_ms: float = 0.0
+    step_tick: int | None = None  # CC sampling resolution; None -> mapper default
 
     @property
     def cc_number(self) -> int | None:
@@ -123,14 +124,18 @@ class CCMapping:
             out["smoothingMs"] = self.smoothing_ms
         if self.look_ahead_ms:
             out["lookAheadMs"] = self.look_ahead_ms
+        if self.step_tick is not None:
+            out["stepTick"] = self.step_tick
         return out
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CCMapping:
+        step = data.get("stepTick")
         return cls(
             internal_parameter=data["internalParameter"],
             target=data["target"],
             curve_id=data.get("curveId"),
             smoothing_ms=float(data.get("smoothingMs", 0.0)),
             look_ahead_ms=float(data.get("lookAheadMs", 0.0)),
+            step_tick=int(step) if step is not None else None,
         )

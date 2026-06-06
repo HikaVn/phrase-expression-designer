@@ -60,9 +60,10 @@ Keep the architecture layered:
 - `profiles`: instrument-specific mappings
 - `midi`: MIDI parsing and writing
 - `engine`: expression mapping and rules
-- `profiles/validation.py`: profile and output checks
+- `exporters`: DAW articulation maps (Logic plist, Cubase expressionmap)
+- `profiles/validation.py` + `project_checks.py`: profile and project checks
 - `cli`: user commands
-- `app/plugin`: future UI and DAW integration
+- `app/plugin`: future UI and DAW integration (do not start before core locked)
 
 ## Documentation
 

@@ -31,8 +31,11 @@
 
 ## v0.4
 
-- Logic Articulation Set-equivalent export
-- Cubase Expression Map-equivalent export (investigation)
+- Logic Articulation Set-equivalent export — **initial version shipped**
+  (`ped export-articulations --format logic`)
+- Cubase Expression Map-equivalent export — **initial version shipped**
+  (`ped export-articulations --format cubase`)
+- Refine both toward exact, version-specific DAW schemas
 - Studio One Sound Variations-equivalent export (investigation)
 
 ## v1.0
