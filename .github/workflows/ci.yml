@@ -25,3 +25,15 @@ jobs:
         run: mypy
       - name: Tests
         run: pytest
+
+  cpp-core:
+    # The JUCE-free C++ core (plugin/Source/PedCore) — parity with the Python core.
+    # The full JUCE plugin build (AU/VST3) is done locally; see docs/PLUGIN.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & run PedCore parity test
+        run: |
+          c++ -std=c++17 -Wall -Wextra -I plugin/Source \
+              plugin/tests/test_pedcore.cpp -o pedcore_test
+          ./pedcore_test

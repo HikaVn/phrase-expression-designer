@@ -47,8 +47,8 @@
 
 ## Future
 
-- AU MIDI FX
-- VST3
+- AU MIDI FX / VST3 — **scaffold shipped** (JUCE, `plugin/`, tested C++ core);
+  build & DAW-validate locally, then iterate (see docs/PLUGIN.md)
 - KSP helper scripts
 - AI expression suggestions
 - Audio-analysis calibration

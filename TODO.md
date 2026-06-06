@@ -45,26 +45,32 @@ resolves an item.
 - License choice.
 - AI-assist: local vs external API.
 
-## Done in this pass
+## Done (DAW integration + plugin scaffold)
 
 - [x] Logic Articulation Set + Cubase Expression Map exporters
       (`ped export-articulations`, `ped/exporters/`).
-- [x] Decreasing monotone-cubic calibration verified + tested (Fritsch–Carlson
-      handles increasing and decreasing monotonic nodes; clamp uses output range).
+- [x] Decreasing monotone-cubic calibration verified + tested.
 - [x] Note-level legato overlap shaping (`apply_legato_overlap`).
 - [x] Per-mapping CC sampling resolution override (`stepTick` on CCMapping).
-- [x] Auto-calibration framework: invert a measured CC→loudness response into a
-      calibration curve (`build_from_measurements`, `ped calibrate-auto`).
+- [x] Auto-calibration framework: invert a measured CC→loudness response
+      (`build_from_measurements`, `ped calibrate-auto`).
+- [x] **AU/VST3 MIDI FX plugin scaffold** (JUCE, `plugin/`): JUCE-free C++ core
+      port (Curve/Calibration) **unit-tested for parity with Python**, profile
+      JSON loader, PluginProcessor (intent→CC + articulation switching),
+      PluginEditor, CMake (AU+VST3+Standalone). See docs/PLUGIN.md.
 
 ## Remaining future work
 
-- [ ] **Audio decode/level extraction** for `calibrate-auto` — feed it real RMS/
-      LUFS/spectral-centroid measured from rendered audio (CC sweep playback +
-      analysis). The inversion framework is done; only the audio front-end is
-      future. Out of MVP per spec §11.2.
+- [ ] **Build & DAW-validate the plugin** locally (Xcode/JUCE) — not done in this
+      repo's CI (no SDK in the sandbox). Then iterate in Logic/Cubase.
+- [ ] Plugin: read *incoming* CC as the intent source and apply
+      `smoothingMs` / `lookAheadMs` in real time (offline mapper already does).
+- [ ] **Audio decode/level extraction** for `calibrate-auto` — real RMS/LUFS from
+      rendered audio (CC sweep + analysis). Inversion framework is done; only the
+      audio front-end remains. Out of MVP per spec §11.2.
 - [ ] Refine exported Logic/Cubase maps toward exact, version-specific schemas.
-- [ ] GUI (Roadmap v0.2+), macOS app, AU MIDI FX / VST3 — **do NOT start before
-      the core is locked** (spec §7.1, §20).
+- [ ] Standalone GUI app (Roadmap v0.2): note/curve/CC visual editing.
+- [ ] License decision (still TBD) — release blocker for any external use.
 
 ## Notes for the Codex phase
 

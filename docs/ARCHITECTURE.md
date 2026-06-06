@@ -60,6 +60,11 @@ Keep DAW-specific and library-specific knowledge out of `core`.
 profile formats; `validate-project` checks values, and the schema is enforced on
 example profiles in the test suite.
 
+`plugin/` is the JUCE AU/VST3 MIDI FX plugin (C++). Its `Source/PedCore/Curve.h`
+and `Calibration.h` are a JUCE-free port of the Python core algorithms, unit-
+tested for exact parity (`plugin/tests/test_pedcore.cpp`, run in CI). The plugin
+consumes the same Instrument Profile JSON as the Python tool. See docs/PLUGIN.md.
+
 ## Export data flow
 
 1. Load `Project` (from JSON or via `read_midi`) and the `InstrumentProfile`.

@@ -1,0 +1,8 @@
+# CMake / build output
+build/
+cmake-build-*/
+*.o
+*.a
+
+# JUCE FetchContent cache (if configured in-tree)
+_deps/

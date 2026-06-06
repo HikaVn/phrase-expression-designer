@@ -1,0 +1,106 @@
+// Parity test for the PedCore C++ port. Reference values are produced by the
+// Python implementation (see tests/ in the repo root) and hard-coded here.
+//
+// Build & run (no JUCE needed):
+//   clang++ -std=c++17 -I plugin/Source plugin/tests/test_pedcore.cpp -o /tmp/pedcore_test && /tmp/pedcore_test
+#include "PedCore/Calibration.h"
+#include "PedCore/Curve.h"
+
+#include <cassert>
+#include <cmath>
+#include <cstdio>
+
+using namespace ped;
+
+static int failures = 0;
+
+static void checkEq (long got, long want, const char* what)
+{
+    if (got != want) { std::printf ("FAIL %s: got %ld want %ld\n", what, got, want); ++failures; }
+}
+
+static void checkClose (double got, double want, const char* what)
+{
+    if (std::fabs (got - want) > 1e-6) { std::printf ("FAIL %s: got %g want %g\n", what, got, want); ++failures; }
+}
+
+static CalibrationCurve dynamicDefault()
+{
+    CalibrationCurve c;
+    c.id = "d";
+    c.points = { {0.0, 8}, {0.25, 35}, {0.5, 68}, {0.75, 96}, {1.0, 120} };
+    c.interpolation = Interp::Monotonic;
+    c.sortPoints();
+    return c;
+}
+
+int main()
+{
+    // --- CalibrationCurve monotone cubic, parity with Python ---
+    {
+        auto c = dynamicDefault();
+        // Python: [8,19,29,41,55,68,80,91,101,111,120] for x = 0.0..1.0 step 0.1
+        const int want[11] = { 8, 19, 29, 41, 55, 68, 80, 91, 101, 111, 120 };
+        for (int i = 0; i <= 10; ++i)
+            checkEq (c.map (i / 10.0), want[i], "cubic.map");
+
+        // monotonic non-decreasing + in range
+        int prev = -1;
+        for (double x = 0.0; x <= 1.0001; x += 0.02)
+        {
+            int v = c.map (x);
+            assert (v >= prev);
+            assert (v >= 0 && v <= 127);
+            prev = v;
+        }
+    }
+
+    // --- decreasing monotone cubic ---
+    {
+        CalibrationCurve c;
+        c.points = { {0.0, 120}, {0.5, 60}, {1.0, 5} };
+        c.interpolation = Interp::Monotonic;
+        c.sortPoints();
+        checkEq (c.map (0.0), 120, "dec.map0");
+        checkEq (c.map (0.5), 60, "dec.map0.5");
+        checkEq (c.map (1.0), 5, "dec.map1");
+        int prev = 200;
+        for (double x = 0.0; x <= 1.0001; x += 0.05) { int v = c.map (x); assert (v <= prev); prev = v; }
+    }
+
+    // --- linear calibration ---
+    {
+        CalibrationCurve c;
+        c.points = { {0.0, 0}, {1.0, 127} };
+        c.interpolation = Interp::Linear;
+        c.sortPoints();
+        checkEq (c.map (0.5), 64, "lin.map0.5"); // Python lin50 == 64
+        checkEq (c.map (-5.0), 0, "lin.clampLo");
+        checkEq (c.map (5.0), 127, "lin.clampHi");
+    }
+
+    // --- ExpressionCurve shapes, parity with Python ---
+    {
+        ExpressionCurve s;
+        s.points = { {0, 0.0, Shape::Smooth}, {100, 1.0, Shape::Smooth} };
+        checkClose (s.valueAt (25), 0.15625, "smooth25");
+        checkClose (s.valueAt (50), 0.5, "smooth50");
+
+        ExpressionCurve l;
+        l.points = { {0, 0.0, Shape::Linear}, {100, 1.0, Shape::Linear} };
+        checkClose (l.valueAt (25), 0.25, "lin25");
+
+        ExpressionCurve h;
+        h.points = { {0, 0.2, Shape::Hold}, {100, 0.8, Shape::Linear} };
+        checkClose (h.valueAt (99), 0.2, "hold99");
+        checkClose (h.valueAt (100), 0.8, "hold100");
+
+        // clamp outside range
+        checkClose (l.valueAt (-10), 0.0, "clampBefore");
+        checkClose (l.valueAt (999), 1.0, "clampAfter");
+    }
+
+    if (failures == 0) { std::printf ("PedCore parity: all checks passed\n"); return 0; }
+    std::printf ("PedCore parity: %d failure(s)\n", failures);
+    return 1;
+}

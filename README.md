@@ -9,8 +9,9 @@ keyswitches through per-instrument **profiles**.
 > performance intent in a reusable, instrument-independent form. When you swap
 > libraries, you swap the profile — not your musical intent.
 
-Status: **v0.1.0 — Python core + CLI (MVP)**. No GUI / AU / VST yet; see
-[docs/ROADMAP.md](docs/ROADMAP.md).
+Status: **Python core + CLI** (feature-complete core) plus a **JUCE AU/VST3 MIDI
+FX plugin scaffold** with a tested C++ core ([docs/PLUGIN.md](docs/PLUGIN.md)). No
+GUI app yet; see [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Why
 
@@ -100,6 +101,7 @@ src/ped/
   cli/       main  (the `ped` command)
   project_checks.py   project-level validation
 schema/      JSON Schema for project + instrument profile
+plugin/      JUCE AU/VST3 MIDI FX plugin (C++) — see docs/PLUGIN.md
 ```
 
 ## Tests & checks
@@ -115,6 +117,7 @@ CI (GitHub Actions) runs all three on Python 3.10–3.13.
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layering and data flow
+- [docs/PLUGIN.md](docs/PLUGIN.md) — AU/VST3 MIDI FX plugin (JUCE) build & design
 - [docs/DATA_FORMAT.md](docs/DATA_FORMAT.md) — JSON schemas for project & profile
 - [docs/KONTAKT_PROFILE.md](docs/KONTAKT_PROFILE.md) — writing Kontakt profiles
 - [docs/LOGIC_INTEGRATION.md](docs/LOGIC_INTEGRATION.md) — Logic Pro workflow
