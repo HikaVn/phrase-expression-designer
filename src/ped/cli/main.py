@@ -28,6 +28,7 @@ from ..engine.rule_engine import generate_articulation_events
 from ..engine.templates import build_curve, template_names
 from ..exporters.cubase import export_cubase_expression_map
 from ..exporters.logic import export_logic_articulation_set
+from ..instrument_scan import scan_instruments
 from ..midi.reader import read_midi
 from ..midi.writer import write_midi
 from ..profiles.calibration_assistant import (
@@ -76,6 +77,28 @@ def _cmd_validate_profile(args: argparse.Namespace) -> int:
         return 0
     print(f"FAILED: {len(report.errors)} error(s), {len(report.warnings)} warning(s).")
     return 1
+
+
+def _cmd_list_instruments(args: argparse.Namespace) -> int:
+    formats = ("au", "vst3") if args.format == "all" else (args.format,)
+    plugins = scan_instruments(formats=formats, instruments_only=not args.all_types)
+    if args.json:
+        print(json.dumps([p.to_dict() for p in plugins], indent=2, ensure_ascii=False))
+        return 0
+    if not plugins:
+        print("No instrument plugins found (auval/VST3 folders empty or unavailable).")
+        return 0
+    name_w = max(len(p.name) for p in plugins)
+    man_w = max((len(p.manufacturer or "") for p in plugins), default=0)
+    for p in plugins:
+        codes = (
+            f"{p.au_type} {p.subtype} {p.manufacturer_code}"
+            if p.format == "AU"
+            else ""
+        )
+        print(f"{p.format:<4}  {p.name:<{name_w}}  {(p.manufacturer or ''):<{man_w}}  {codes}")
+    print(f"\n{len(plugins)} plugin(s). Use a name for a profile's \"library\" field.")
+    return 0
 
 
 def _cmd_validate_project(args: argparse.Namespace) -> int:
@@ -286,6 +309,19 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("validate-profile", help="validate an instrument profile")
     p.add_argument("file")
     p.set_defaults(func=_cmd_validate_profile)
+
+    p = sub.add_parser(
+        "list-instruments",
+        help="list installed instrument plugins (AU via auval, VST3 by folder)",
+    )
+    p.add_argument("--format", choices=["au", "vst3", "all"], default="all")
+    p.add_argument(
+        "--all-types",
+        action="store_true",
+        help="AU: include all component types, not just instruments (aumu)",
+    )
+    p.add_argument("--json", action="store_true", help="output JSON")
+    p.set_defaults(func=_cmd_list_instruments)
 
     p = sub.add_parser("validate-project", help="validate a project JSON (structure + refs)")
     p.add_argument("project")

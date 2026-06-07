@@ -107,6 +107,16 @@ ped validate-profile examples/profiles/example_kontakt_strings_vln1.json
 別音源に移るときは**この JSON を差し替えるだけ**。演奏意図データは作り直しません。
 形式の詳細は [DATA_FORMAT.md](DATA_FORMAT.md)、Kontakt のコツは [KONTAKT_PROFILE.md](KONTAKT_PROFILE.md)。
 
+`library` 欄に何と書けばいいか分からないときは、インストール済みの音源プラグインを一覧できます：
+
+```bash
+ped list-instruments                 # AU(auval) + VST3 を一覧
+ped list-instruments --format au --json   # 機械可読（type/subtype/manufacturer 付き）
+```
+
+取れるのは**プラグイン名まで**（例：`Kontakt 8`）。その中の**パッチ名**は音源固有なので、
+`patch` 欄は手で記入します（DAW/サンプラーの仕様上、自動取得はできません）。
+
 ---
 
 ## 4. 表情をつける3つの方法
