@@ -1,0 +1,276 @@
+{
+  "schemaVersion": "0.1.0",
+  "projectName": "benchmark_phrase",
+  "ppq": 480,
+  "tempoMap": [
+    {
+      "tick": 0,
+      "bpm": 120.0
+    }
+  ],
+  "timeSignatureMap": [],
+  "tracks": [
+    {
+      "id": "t0",
+      "name": "Strings",
+      "instrumentProfileId": "example_kontakt_strings_vln1",
+      "notes": [
+        {
+          "id": "n00",
+          "pitch": 67,
+          "startTick": 0,
+          "durationTick": 940,
+          "velocity": 72,
+          "articulationId": "legato",
+          "phraseId": null
+        },
+        {
+          "id": "n01",
+          "pitch": 69,
+          "startTick": 960,
+          "durationTick": 940,
+          "velocity": 72,
+          "articulationId": "legato",
+          "phraseId": null
+        },
+        {
+          "id": "n02",
+          "pitch": 72,
+          "startTick": 1920,
+          "durationTick": 940,
+          "velocity": 72,
+          "articulationId": "legato",
+          "phraseId": null
+        },
+        {
+          "id": "n03",
+          "pitch": 71,
+          "startTick": 2880,
+          "durationTick": 940,
+          "velocity": 72,
+          "articulationId": "legato",
+          "phraseId": null
+        },
+        {
+          "id": "n04",
+          "pitch": 74,
+          "startTick": 3840,
+          "durationTick": 460,
+          "velocity": 72,
+          "articulationId": "legato",
+          "phraseId": null
+        },
+        {
+          "id": "n05",
+          "pitch": 72,
+          "startTick": 4320,
+          "durationTick": 460,
+          "velocity": 72,
+          "articulationId": "legato",
+          "phraseId": null
+        },
+        {
+          "id": "n06",
+          "pitch": 71,
+          "startTick": 4800,
+          "durationTick": 460,
+          "velocity": 72,
+          "articulationId": "legato",
+          "phraseId": null
+        },
+        {
+          "id": "n07",
+          "pitch": 69,
+          "startTick": 5280,
+          "durationTick": 460,
+          "velocity": 72,
+          "articulationId": "legato",
+          "phraseId": null
+        },
+        {
+          "id": "n08",
+          "pitch": 67,
+          "startTick": 5760,
+          "durationTick": 1900,
+          "velocity": 72,
+          "articulationId": "legato",
+          "phraseId": null
+        }
+      ],
+      "expressionCurves": [
+        {
+          "id": "intensity_arch",
+          "parameter": "intensity",
+          "points": [
+            {
+              "tick": 0,
+              "value": 0.0,
+              "shape": "smooth"
+            },
+            {
+              "tick": 240,
+              "value": 0.0625,
+              "shape": "smooth"
+            },
+            {
+              "tick": 480,
+              "value": 0.125,
+              "shape": "smooth"
+            },
+            {
+              "tick": 720,
+              "value": 0.1875,
+              "shape": "smooth"
+            },
+            {
+              "tick": 960,
+              "value": 0.25,
+              "shape": "smooth"
+            },
+            {
+              "tick": 1200,
+              "value": 0.3125,
+              "shape": "smooth"
+            },
+            {
+              "tick": 1440,
+              "value": 0.375,
+              "shape": "smooth"
+            },
+            {
+              "tick": 1680,
+              "value": 0.4375,
+              "shape": "smooth"
+            },
+            {
+              "tick": 1920,
+              "value": 0.5,
+              "shape": "smooth"
+            },
+            {
+              "tick": 2160,
+              "value": 0.5625,
+              "shape": "smooth"
+            },
+            {
+              "tick": 2400,
+              "value": 0.625,
+              "shape": "smooth"
+            },
+            {
+              "tick": 2640,
+              "value": 0.6875,
+              "shape": "smooth"
+            },
+            {
+              "tick": 2880,
+              "value": 0.75,
+              "shape": "smooth"
+            },
+            {
+              "tick": 3120,
+              "value": 0.8125,
+              "shape": "smooth"
+            },
+            {
+              "tick": 3360,
+              "value": 0.875,
+              "shape": "smooth"
+            },
+            {
+              "tick": 3600,
+              "value": 0.9375,
+              "shape": "smooth"
+            },
+            {
+              "tick": 3840,
+              "value": 1.0,
+              "shape": "smooth"
+            },
+            {
+              "tick": 4080,
+              "value": 0.9375,
+              "shape": "smooth"
+            },
+            {
+              "tick": 4320,
+              "value": 0.875,
+              "shape": "smooth"
+            },
+            {
+              "tick": 4560,
+              "value": 0.8125,
+              "shape": "smooth"
+            },
+            {
+              "tick": 4800,
+              "value": 0.75,
+              "shape": "smooth"
+            },
+            {
+              "tick": 5040,
+              "value": 0.6875,
+              "shape": "smooth"
+            },
+            {
+              "tick": 5280,
+              "value": 0.625,
+              "shape": "smooth"
+            },
+            {
+              "tick": 5520,
+              "value": 0.5625,
+              "shape": "smooth"
+            },
+            {
+              "tick": 5760,
+              "value": 0.5,
+              "shape": "smooth"
+            },
+            {
+              "tick": 6000,
+              "value": 0.4375,
+              "shape": "smooth"
+            },
+            {
+              "tick": 6240,
+              "value": 0.375,
+              "shape": "smooth"
+            },
+            {
+              "tick": 6480,
+              "value": 0.3125,
+              "shape": "smooth"
+            },
+            {
+              "tick": 6720,
+              "value": 0.25,
+              "shape": "smooth"
+            },
+            {
+              "tick": 6960,
+              "value": 0.1875,
+              "shape": "smooth"
+            },
+            {
+              "tick": 7200,
+              "value": 0.125,
+              "shape": "smooth"
+            },
+            {
+              "tick": 7440,
+              "value": 0.0625,
+              "shape": "smooth"
+            },
+            {
+              "tick": 7680,
+              "value": 0.0,
+              "shape": "smooth"
+            }
+          ]
+        }
+      ],
+      "phrases": []
+    }
+  ]
+}
