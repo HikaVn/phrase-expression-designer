@@ -28,8 +28,10 @@ from ..engine.rule_engine import generate_articulation_events
 from ..engine.templates import build_curve, template_names
 from ..exporters.cubase import export_cubase_expression_map
 from ..exporters.logic import export_logic_articulation_set
+from ..instrument_scan import scan_instruments
 from ..midi.reader import read_midi
 from ..midi.writer import write_midi
+from ..profile_template import build_starter_profile, infer_engine, slugify
 from ..profiles.calibration_assistant import (
     build_from_dynamics,
     build_from_measurements,
@@ -39,6 +41,7 @@ from ..profiles.calibration_assistant import (
 from ..profiles.instrument_profile import InstrumentProfile
 from ..profiles.validation import validate_profile
 from ..project_checks import validate_project_dict
+from ..wizards import calibration_wizard, new_profile_wizard
 
 
 def _cmd_inspect_midi(args: argparse.Namespace) -> int:
@@ -78,6 +81,62 @@ def _cmd_validate_profile(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_list_instruments(args: argparse.Namespace) -> int:
+    formats = ("au", "vst3") if args.format == "all" else (args.format,)
+    plugins = scan_instruments(formats=formats, instruments_only=not args.all_types)
+    if args.json:
+        print(json.dumps([p.to_dict() for p in plugins], indent=2, ensure_ascii=False))
+        return 0
+    if not plugins:
+        print("No instrument plugins found (auval/VST3 folders empty or unavailable).")
+        return 0
+    name_w = max(len(p.name) for p in plugins)
+    man_w = max((len(p.manufacturer or "") for p in plugins), default=0)
+    for p in plugins:
+        codes = (
+            f"{p.au_type} {p.subtype} {p.manufacturer_code}"
+            if p.format == "AU"
+            else ""
+        )
+        print(f"{p.format:<4}  {p.name:<{name_w}}  {(p.manufacturer or ''):<{man_w}}  {codes}")
+    print(f"\n{len(plugins)} plugin(s). Use a name for a profile's \"library\" field.")
+    return 0
+
+
+def _cmd_new_profile(args: argparse.Namespace) -> int:
+    if args.interactive:
+        profile = new_profile_wizard()
+    else:
+        engine = args.engine or infer_engine(args.from_instrument) or args.from_instrument
+        library = args.library or args.from_instrument
+        profile_id = args.id or slugify(args.from_instrument or library or engine, args.patch)
+        profile = build_starter_profile(
+            profile_id, engine=engine, library=library, patch=args.patch,
+            note_naming=args.note_naming,
+        )
+
+    out = Path(args.output) if args.output else Path(f"{profile.id}.json")
+    if out.exists() and not args.force:
+        print(f"error: {out} already exists (use --force to overwrite)", file=sys.stderr)
+        return 2
+
+    report = validate_profile(profile)
+    if not report.ok:  # should not happen for the template, but never write a broken profile
+        for issue in report.errors:
+            print(issue, file=sys.stderr)
+        return 1
+
+    profile.save(out)
+    print(
+        f"Wrote starter profile {profile.id!r} to {out}\n"
+        f"  engine={profile.engine!r} library={profile.library!r} "
+        f"patch={profile.patch!r} noteNaming={profile.note_naming}\n"
+        f"  Next: edit library/patch, the keyswitch notes, and calibrate "
+        f"(`ped calibrate --id dyn_default --levels ... --profile {out}`)."
+    )
+    return 0
+
+
 def _cmd_validate_project(args: argparse.Namespace) -> int:
     data = json.loads(Path(args.project).read_text(encoding="utf-8"))
     profile = InstrumentProfile.load(args.profile) if args.profile else None
@@ -110,7 +169,16 @@ def _emit_calibration(curve, profile_path: str | None, output: str | None) -> in
 
 
 def _cmd_calibrate(args: argparse.Namespace) -> int:
-    curve = build_from_dynamics(args.id, parse_levels(args.levels), interpolation=args.interp)
+    if args.interactive:
+        curve = calibration_wizard(curve_id_default=args.id or "dyn_default")
+    else:
+        if not args.levels:
+            print("error: --levels is required (or use --interactive)", file=sys.stderr)
+            return 2
+        if not args.id:
+            print("error: --id is required (or use --interactive)", file=sys.stderr)
+            return 2
+        curve = build_from_dynamics(args.id, parse_levels(args.levels), interpolation=args.interp)
     return _emit_calibration(curve, args.profile, args.output)
 
 
@@ -287,6 +355,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("file")
     p.set_defaults(func=_cmd_validate_profile)
 
+    p = sub.add_parser(
+        "list-instruments",
+        help="list installed instrument plugins (AU via auval, VST3 by folder)",
+    )
+    p.add_argument("--format", choices=["au", "vst3", "all"], default="all")
+    p.add_argument(
+        "--all-types",
+        action="store_true",
+        help="AU: include all component types, not just instruments (aumu)",
+    )
+    p.add_argument("--json", action="store_true", help="output JSON")
+    p.set_defaults(func=_cmd_list_instruments)
+
+    p = sub.add_parser("new-profile", help="scaffold a starter instrument profile JSON")
+    p.add_argument("--id", help="profile id (default: derived from the name)")
+    p.add_argument("--from-instrument", help="installed plugin name (fills engine/library)")
+    p.add_argument("--engine", help="engine, e.g. Kontakt (default: inferred)")
+    p.add_argument("--library", help="sample library name")
+    p.add_argument("--patch", help="patch name")
+    p.add_argument("--note-naming", choices=["C3=60", "C4=60"], default="C3=60")
+    p.add_argument("-o", "--output", help="output path (default: <id>.json)")
+    p.add_argument("--force", action="store_true", help="overwrite if the file exists")
+    p.add_argument(
+        "-i", "--interactive", action="store_true",
+        help="pick an installed instrument and fill fields by prompts",
+    )
+    p.set_defaults(func=_cmd_new_profile)
+
     p = sub.add_parser("validate-project", help="validate a project JSON (structure + refs)")
     p.add_argument("project")
     p.add_argument("--profile", help="optional profile JSON to cross-check against")
@@ -302,15 +398,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_cmd_export_articulations)
 
     p = sub.add_parser("calibrate", help="build a calibration curve from dynamic levels")
-    p.add_argument("--id", required=True, help="calibration curve id")
+    p.add_argument("--id", help="calibration curve id (required unless --interactive)")
     p.add_argument(
         "--levels",
-        required=True,
-        help="dynamic table, e.g. 'ppp=8,p=35,mf=68,ff=110,fff=120'",
+        help="dynamic table, e.g. 'ppp=8,p=35,mf=68,ff=110,fff=120' (or use --interactive)",
     )
     p.add_argument("--interp", default="monotonic", choices=["linear", "monotonic"])
     p.add_argument("--profile", help="profile JSON to add/replace the curve in")
     p.add_argument("-o", "--output", help="write the curve JSON here (else stdout)")
+    p.add_argument(
+        "-i", "--interactive", action="store_true",
+        help="enter a CC value per dynamic (ppp..fff) by prompts",
+    )
     p.set_defaults(func=_cmd_calibrate)
 
     p = sub.add_parser(

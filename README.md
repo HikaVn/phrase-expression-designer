@@ -65,6 +65,8 @@ ped calibrate --id dyn --levels "ppp=8,p=35,mf=68,ff=110,fff=120" \
 | `import-midi` | MIDI → project JSON |
 | `validate-profile` | Check an instrument profile |
 | `validate-project` | Check a project (structure + refs, optional profile cross-check) |
+| `list-instruments` | List installed instrument plugins (AU via `auval`, VST3 by folder) |
+| `new-profile` | Scaffold a valid starter instrument profile JSON |
 | `apply-template` | Add one template curve (swell, arch, …) |
 | `apply-macro` | Add a multi-parameter macro (emotional_swell, cinematic_rise, …) |
 | `paint-phrase` | Derive volume/vibrato/timbre curves from one intent line |
@@ -116,6 +118,7 @@ CI (GitHub Actions) runs all three on Python 3.10–3.13.
 
 ## Documentation
 
+- [docs/TUTORIAL.md](docs/TUTORIAL.md) — hands-on walkthrough (CLI → expression → calibration → plugin)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layering and data flow
 - [docs/PLUGIN.md](docs/PLUGIN.md) — AU/VST3 MIDI FX plugin (JUCE) build & design
 - [docs/DATA_FORMAT.md](docs/DATA_FORMAT.md) — JSON schemas for project & profile
