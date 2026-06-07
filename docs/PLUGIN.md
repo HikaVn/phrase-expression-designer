@@ -34,18 +34,36 @@ verifiable. Only `Profile.*` and the plugin classes pull in JUCE.
 
 ## How it works
 
-- Three host-automatable parameters — `intensity`, `timbre`, `vibratoDepth`
-  (0.0–1.0) — are the performance intent.
+- Three intent values — `intensity`, `timbre`, `vibratoDepth` (0.0–1.0) — drive
+  the output. Each can be set two ways:
+  - **Host/editor**: the matching plugin parameter (automation or a knob), or
+  - **Live input CC**: if the profile's mapping has an `inputCc` (e.g. `1` =
+    mod wheel), the plugin reads that incoming controller as the intent. Once an
+    assigned input CC arrives it takes over from the knob.
 - On load, an Instrument Profile JSON (the same files the `ped` tool uses) is
-  parsed. For each parameter that the profile maps to a CC, the parameter value
-  is pushed through the profile's calibration curve and emitted as that CC
-  (only when the value changes, to keep the stream compact).
+  parsed. For each parameter mapped to an output CC, the intent is pushed through
+  the profile's **calibration curve** and emitted as that CC — only when the
+  integer value changes, to keep the stream compact.
+- **Real-time smoothing**: each output is run through a one-pole low-pass using
+  the mapping's `smoothingMs`, so live controller jumps come out as smooth CC
+  ramps. (See `PedCore/Smoothing.h`, unit-tested for parity with the Python
+  `one_pole`.)
+- Input CCs assigned via `inputCc` are **consumed** (not passed through); the
+  calibrated output replaces them. All other incoming MIDI — your notes, other
+  controllers — passes through unchanged.
 - An `Articulation` index parameter taps the selected articulation's trigger
   (keyswitch note / CC / program change).
-- Incoming MIDI (your notes) is passed through unchanged.
 
-This mirrors the offline `export-midi` path, so a profile sounds the same whether
-you render CC offline in Python or generate it live in the DAW.
+This mirrors the offline `export-midi` path, so a profile behaves the same
+whether you render CC offline in Python or play it live in the DAW.
+
+### Why there is no real-time `lookAhead`
+
+The offline mapper supports `lookAheadMs` (CC anticipates a curve by reading
+*ahead* in time). Live, that is impossible without delaying output — you cannot
+read a controller value the performer has not moved yet (**causality**). So the
+plugin applies `smoothingMs` but ignores `lookAheadMs`; anticipation stays an
+offline-only feature.
 
 ## Build
 
@@ -90,9 +108,10 @@ When you change a core algorithm in Python, update both ports and both tests.
 ## Current limitations / next steps
 
 - Not yet built or validated inside Logic/Cubase in this repo — do that locally.
-- Intent is taken from plugin parameters (host automation); reading *incoming*
-  CC as the intent source and applying `smoothingMs` / `lookAheadMs` in real time
-  is a natural next step (the offline mapper already does both).
+- Input-CC source + real-time `smoothingMs` are implemented; `lookAheadMs` is
+  offline-only by design (see above).
 - Per-note performance rules (velocity shaping, legato overlap) are offline-only
   for now; the plugin focuses on CC + articulation switching.
+- Input-CC assignment is profile-driven (`inputCc`); a UI to re-assign it live
+  (MIDI-learn) would be a nice addition.
 - Manufacturer/plugin codes in `CMakeLists.txt` are placeholders; set your own.

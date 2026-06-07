@@ -32,10 +32,11 @@ struct PluginArticulation
 struct PluginCCMapping
 {
     juce::String parameter;   // intensity / volume / timbre / vibratoDepth ...
-    int          cc = -1;
+    int          cc = -1;     // output CC
     juce::String curveId;
     double       smoothingMs = 0.0;
-    double       lookAheadMs = 0.0;
+    double       lookAheadMs = 0.0; // offline only (real-time can't see the future)
+    int          inputCc = -1;      // live source controller, or -1
 };
 
 class InstrumentProfile

@@ -63,8 +63,10 @@ resolves an item.
 
 - [ ] **Build & DAW-validate the plugin** locally (Xcode/JUCE) — not done in this
       repo's CI (no SDK in the sandbox). Then iterate in Logic/Cubase.
-- [ ] Plugin: read *incoming* CC as the intent source and apply
-      `smoothingMs` / `lookAheadMs` in real time (offline mapper already does).
+- [x] Plugin: read *incoming* CC as the intent source (`inputCc` on a mapping)
+      and apply `smoothingMs` in real time (one-pole, parity-tested). `lookAheadMs`
+      is offline-only by design — real-time can't read the future (causality).
+- [ ] Plugin: MIDI-learn UI to assign `inputCc` live (currently profile-driven).
 - [ ] **Audio decode/level extraction** for `calibrate-auto` — real RMS/LUFS from
       rendered audio (CC sweep + analysis). Inversion framework is done; only the
       audio front-end remains. Out of MVP per spec §11.2.

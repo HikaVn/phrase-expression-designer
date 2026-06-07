@@ -12,6 +12,7 @@
 #include <array>
 
 #include "PedCore/Profile.h"
+#include "PedCore/Smoothing.h"
 
 class PedAudioProcessor : public juce::AudioProcessor
 {
@@ -50,6 +51,7 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout();
+    void rebuildInputMap(); // map each intent param to its source CC (or -1)
 
     static constexpr std::array<const char*, 3> kParams { "intensity", "timbre", "vibratoDepth" };
     static constexpr int kMaxArticulations = 32;
@@ -57,10 +59,17 @@ private:
     ped::InstrumentProfile profile;
     juce::String profilePath;
     int midiChannel = 1;
+    double currentSampleRate = 44100.0;
 
     std::array<int, 3> lastSentCC { -1, -1, -1 };
     int lastArticulationIndex = -1;
     int pendingNoteOff = -1; // keyswitch note to release at the next block start
+
+    // Real-time intent state, per kParams entry.
+    std::array<ped::OnePole, 3> smoothers;
+    std::array<double, 3> intentTarget { 0.5, 0.5, 0.5 };
+    std::array<bool, 3> inputDriven { false, false, false }; // an input CC has arrived
+    std::array<int, 3> inputCcForParam { -1, -1, -1 };       // source CC per param, or -1
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PedAudioProcessor)
 };

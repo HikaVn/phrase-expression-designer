@@ -123,13 +123,17 @@ resolve to MIDI numbers (see `docs/KONTAKT_PROFILE.md`).
   "curveId": "dynamic_curve_default",
   "smoothingMs": 40,
   "lookAheadMs": 80,
-  "stepTick": 60
+  "stepTick": 60,
+  "inputCc": 1
 }
 ```
 
 `target.type` is `"cc"` for CC output. `lookAheadMs` makes the CC anticipate the
-curve. `stepTick` (optional) overrides the CC sampling resolution for this
-mapping; omit it to use the mapper default.
+curve (offline only). `stepTick` (optional) overrides the CC sampling resolution
+for this mapping; omit it to use the mapper default. `inputCc` (optional, 0–127)
+names a **live source controller** the plugin reads as this parameter's intent in
+real time (e.g. `1` = mod wheel); the offline renderer ignores it. See
+[PLUGIN.md](PLUGIN.md).
 
 ## CalibrationCurve
 

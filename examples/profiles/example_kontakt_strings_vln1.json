@@ -38,7 +38,8 @@
       "internalParameter": "intensity",
       "target": { "type": "cc", "cc": 1 },
       "curveId": "dynamic_default",
-      "smoothingMs": 40
+      "smoothingMs": 40,
+      "inputCc": 1
     },
     {
       "internalParameter": "volume",

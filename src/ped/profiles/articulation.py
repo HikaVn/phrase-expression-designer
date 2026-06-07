@@ -106,6 +106,10 @@ class CCMapping:
     smoothing_ms: float = 0.0
     look_ahead_ms: float = 0.0
     step_tick: int | None = None  # CC sampling resolution; None -> mapper default
+    # Real-time: an incoming MIDI CC that drives this parameter live in the plugin
+    # (e.g. 1 = mod wheel). Offline rendering ignores it (it uses curves). None ->
+    # the parameter is driven by the host/editor, not an input controller.
+    input_cc: int | None = None
 
     @property
     def cc_number(self) -> int | None:
@@ -126,11 +130,14 @@ class CCMapping:
             out["lookAheadMs"] = self.look_ahead_ms
         if self.step_tick is not None:
             out["stepTick"] = self.step_tick
+        if self.input_cc is not None:
+            out["inputCc"] = self.input_cc
         return out
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CCMapping:
         step = data.get("stepTick")
+        in_cc = data.get("inputCc")
         return cls(
             internal_parameter=data["internalParameter"],
             target=data["target"],
@@ -138,4 +145,5 @@ class CCMapping:
             smoothing_ms=float(data.get("smoothingMs", 0.0)),
             look_ahead_ms=float(data.get("lookAheadMs", 0.0)),
             step_tick=int(step) if step is not None else None,
+            input_cc=int(in_cc) if in_cc is not None else None,
         )

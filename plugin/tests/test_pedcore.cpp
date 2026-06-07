@@ -5,6 +5,7 @@
 //   clang++ -std=c++17 -I plugin/Source plugin/tests/test_pedcore.cpp -o /tmp/pedcore_test && /tmp/pedcore_test
 #include "PedCore/Calibration.h"
 #include "PedCore/Curve.h"
+#include "PedCore/Smoothing.h"
 
 #include <cassert>
 #include <cmath>
@@ -98,6 +99,31 @@ int main()
         // clamp outside range
         checkClose (l.valueAt (-10), 0.0, "clampBefore");
         checkClose (l.valueAt (999), 1.0, "clampAfter");
+    }
+
+    // --- OnePole smoothing ---
+    {
+        OnePole f;
+        f.reset (0.0);
+        // dt=10ms, tau=40ms -> alpha = 1 - exp(-0.25) = 0.2211992...
+        double v = f.process (1.0, 10.0, 40.0);
+        checkClose (v, 1.0 - std::exp (-0.25), "onepole.firstStep");
+
+        // converges toward the target, monotonically, never overshoots
+        double prev = v;
+        for (int i = 0; i < 200; ++i)
+        {
+            double cur = f.process (1.0, 10.0, 40.0);
+            assert (cur >= prev - 1e-12);
+            assert (cur <= 1.0 + 1e-9);
+            prev = cur;
+        }
+        assert (std::fabs (prev - 1.0) < 1e-3);
+
+        // smoothingMs <= 0 -> jump straight to target
+        OnePole g;
+        g.reset (0.0);
+        checkClose (g.process (0.7, 10.0, 0.0), 0.7, "onepole.noSmoothing");
     }
 
     if (failures == 0) { std::printf ("PedCore parity: all checks passed\n"); return 0; }

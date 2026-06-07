@@ -84,6 +84,7 @@ bool InstrumentProfile::loadFromJSON (const juce::var& root)
             pm.curveId = m.getProperty ("curveId", "").toString();
             pm.smoothingMs = (double) m.getProperty ("smoothingMs", 0.0);
             pm.lookAheadMs = (double) m.getProperty ("lookAheadMs", 0.0);
+            pm.inputCc = m.hasProperty ("inputCc") ? (int) m.getProperty ("inputCc", -1) : -1;
             ccMappings.push_back (pm);
         }
     }

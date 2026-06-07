@@ -65,7 +65,8 @@
         "curveId": { "type": ["string", "null"] },
         "smoothingMs": { "type": "number", "minimum": 0 },
         "lookAheadMs": { "type": "number", "minimum": 0 },
-        "stepTick": { "type": "integer", "minimum": 1 }
+        "stepTick": { "type": "integer", "minimum": 1 },
+        "inputCc": { "type": "integer", "minimum": 0, "maximum": 127 }
       }
     },
     "calibrationCurve": {

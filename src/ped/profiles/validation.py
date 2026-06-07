@@ -89,6 +89,13 @@ def validate_profile(profile: InstrumentProfile) -> ValidationReport:
                 f"CC mapping for {mapping.internal_parameter!r} references unknown "
                 f"calibration curve {mapping.curve_id!r}.",
             )
+        if mapping.input_cc is not None and not 0 <= mapping.input_cc <= 127:
+            report.add(
+                ERROR,
+                "input_cc_out_of_range",
+                f"CC mapping for {mapping.internal_parameter!r} has invalid "
+                f"inputCc {mapping.input_cc!r} (must be 0-127).",
+            )
 
     for curve in profile.calibration_curves:
         _check_calibration_range(curve, report)
