@@ -116,6 +116,7 @@ CI (GitHub Actions) runs all three on Python 3.10–3.13.
 
 ## Documentation
 
+- [docs/TUTORIAL.md](docs/TUTORIAL.md) — hands-on walkthrough (CLI → expression → calibration → plugin)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — layering and data flow
 - [docs/PLUGIN.md](docs/PLUGIN.md) — AU/VST3 MIDI FX plugin (JUCE) build & design
 - [docs/DATA_FORMAT.md](docs/DATA_FORMAT.md) — JSON schemas for project & profile
