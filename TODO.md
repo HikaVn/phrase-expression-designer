@@ -61,8 +61,11 @@ resolves an item.
 
 ## Remaining future work
 
-- [ ] **Build & DAW-validate the plugin** locally (Xcode/JUCE) — not done in this
-      repo's CI (no SDK in the sandbox). Then iterate in Logic/Cubase.
+- [x] **Build the plugin locally** — AU/VST3/Standalone built (CMake+Ninja, CLT
+      only, no full Xcode) and the **AU passes `auval`** (`AU VALIDATION
+      SUCCEEDED`). Installed to `~/Library/Audio/Plug-Ins`. See docs/PLUGIN.md.
+- [ ] **Play-test in Logic/Cubase**: load a real instrument, drive intent live
+      (mod wheel → CC1), confirm articulation switching sounds right.
 - [x] Plugin: read *incoming* CC as the intent source (`inputCc` on a mapping)
       and apply `smoothingMs` in real time (one-pole, parity-tested). `lookAheadMs`
       is offline-only by design — real-time can't read the future (causality).

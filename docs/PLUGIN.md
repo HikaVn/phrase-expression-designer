@@ -6,11 +6,12 @@ Live), and a **Standalone** app. It is a **MIDI effect**: place it *before* an
 instrument; it converts intent parameters into the CC and articulation switches
 the loaded Instrument Profile prescribes, and passes incoming MIDI through.
 
-> Status: **scaffold + tested core**. The pure-math C++ core is unit-tested and
-> matches the Python implementation exactly. The JUCE wrapper compiles against
-> JUCE 8 with the steps below, but is **not built or DAW-tested in this repo's
-> CI** (no JUCE SDK / Xcode in the sandbox). Build and validate it on a machine
-> with Xcode.
+> Status: **builds and passes Audio Unit validation**. All three formats (AU,
+> VST3, Standalone) have been built locally on macOS (Apple Silicon) and the AU
+> passes `auval` (`AU VALIDATION SUCCEEDED`). Notably this worked with **Command
+> Line Tools only — full Xcode was not required**. CI builds only the JUCE-free
+> C++ core (`pedcore_test`); the full JUCE build is done locally as below.
+> Still to do by you: open it in Logic/Cubase and play through a real instrument.
 
 ## Layout
 
@@ -65,17 +66,28 @@ read a controller value the performer has not moved yet (**causality**). So the
 plugin applies `smoothingMs` but ignores `lookAheadMs`; anticipation stays an
 offline-only feature.
 
-## Build
+## Build (verified steps)
 
-Requires CMake ≥ 3.22 and a C++17 toolchain (Xcode on macOS). JUCE is fetched
-automatically on first configure (needs network), pinned to 8.0.4.
+Requires CMake ≥ 3.22, Ninja, and a C++17 toolchain. **Command Line Tools are
+enough** (full Xcode not required); the Xcode CMake generator does need full
+Xcode, so use Ninja. JUCE is fetched automatically on first configure (needs
+network), pinned to 8.0.4.
 
 ```bash
-cd plugin
-cmake -B build -G Xcode            # or: cmake -B build (Makefiles/Ninja)
-cmake --build build --config Release
-ctest --test-dir build             # runs the PedCore parity test
+# from the repo root. If you don't have cmake/ninja:
+python3 -m pip install cmake ninja        # quick way to get both
+
+cmake -S plugin -B plugin/build -G Ninja -DCMAKE_BUILD_TYPE=Release   # configure (fetches JUCE)
+ctest --test-dir plugin/build                                         # JUCE-free core parity test
+
+# build the formats you want (or all by building the default target)
+cmake --build plugin/build --target PhraseExpressionDesigner_VST3
+cmake --build plugin/build --target PhraseExpressionDesigner_AU
+cmake --build plugin/build --target PhraseExpressionDesigner_Standalone
 ```
+
+Artefacts land in
+`plugin/build/PhraseExpressionDesigner_artefacts/Release/{AU,VST3,Standalone}/`.
 
 To use a local JUCE checkout instead of fetching, edit `CMakeLists.txt` (see the
 comment near `FetchContent`).
@@ -87,16 +99,24 @@ clang++ -std=c++17 -I plugin/Source plugin/tests/test_pedcore.cpp -o /tmp/pedcor
 /tmp/pedcore_test
 ```
 
-## Install (macOS)
+## Install & validate (macOS)
 
-The build copies formats to the standard folders:
+Copy the bundles into the user plug-in folders (use `ditto` to preserve the
+bundle + ad-hoc signature):
 
-- AU: `~/Library/Audio/Plug-Ins/Components/`
-- VST3: `~/Library/Audio/Plug-Ins/VST3/`
+```bash
+ART="plugin/build/PhraseExpressionDesigner_artefacts/Release"
+ditto "$ART/AU/Phrase Expression Designer.component"  "$HOME/Library/Audio/Plug-Ins/Components/Phrase Expression Designer.component"
+ditto "$ART/VST3/Phrase Expression Designer.vst3"     "$HOME/Library/Audio/Plug-Ins/VST3/Phrase Expression Designer.vst3"
 
-In Logic, add it as a **MIDI FX** on an instrument track (it appears under the
-manufacturer "HikaVn"). In Cubase/Studio One/REAPER, insert the VST3 as a MIDI
-insert before the instrument.
+# validate the AU (type aumi = MIDI processor, subtype Ped1, manufacturer Hkvn)
+auval -v aumi Ped1 Hkvn      # expect: AU VALIDATION SUCCEEDED
+```
+
+In **Logic**, add it as a **MIDI FX** on an instrument track (it is a MIDI
+processor, manufacturer "HikaVn"). In **Cubase/Studio One/REAPER**, insert the
+VST3 as a MIDI insert *before* the instrument. The Standalone `.app` runs with no
+install for a quick GUI smoke test.
 
 ## Parity with the Python core
 
