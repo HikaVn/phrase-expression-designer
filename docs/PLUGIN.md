@@ -78,7 +78,7 @@ network), pinned to 8.0.4.
 python3 -m pip install cmake ninja        # quick way to get both
 
 cmake -S plugin -B plugin/build -G Ninja -DCMAKE_BUILD_TYPE=Release   # configure (fetches JUCE)
-ctest --test-dir plugin/build                                         # JUCE-free core parity test
+ctest --test-dir plugin/build                                         # runs both tests below
 
 # build the formats you want (or all by building the default target)
 cmake --build plugin/build --target PhraseExpressionDesigner_VST3
@@ -118,12 +118,22 @@ processor, manufacturer "HikaVn"). In **Cubase/Studio One/REAPER**, insert the
 VST3 as a MIDI insert *before* the instrument. The Standalone `.app` runs with no
 install for a quick GUI smoke test.
 
-## Parity with the Python core
+## Tests
 
-`tests/test_pedcore.cpp` asserts the C++ port reproduces the Python reference
-values for: monotone-cubic and linear calibration mapping (including decreasing
-curves and 0–127 clamping) and ExpressionCurve linear/smooth/hold evaluation.
-When you change a core algorithm in Python, update both ports and both tests.
+Two `ctest` tests (run via `ctest --test-dir plugin/build`):
+
+- **`pedcore_test`** (no JUCE) — asserts the C++ core reproduces the Python
+  reference values: monotone-cubic and linear calibration (incl. decreasing
+  curves and 0–127 clamping), ExpressionCurve linear/smooth/hold, and the
+  one-pole smoother. This is the one the GitHub CI builds (via `c++` directly).
+- **`processor_test`** (links JUCE + the plugin code) — a headless host test:
+  it constructs `PedAudioProcessor`, drives `processBlock` with crafted MIDI,
+  and checks the real-time behavior — input CC1 → calibrated output CC1 (raw
+  input consumed), non-input CC and notes pass through, and an articulation
+  change taps + releases its keyswitch. Run locally; not in CI (needs full JUCE
+  incl. GUI modules).
+
+When you change a core algorithm in Python, update both C++ ports and the tests.
 
 ## Current limitations / next steps
 

@@ -58,3 +58,27 @@ enable_testing()
 add_executable(pedcore_test tests/test_pedcore.cpp)
 target_include_directories(pedcore_test PRIVATE Source)
 add_test(NAME pedcore_test COMMAND pedcore_test)
+
+# --- Headless processor runtime test (links JUCE + plugin code) -------------
+juce_add_console_app(processor_test PRODUCT_NAME "processor_test")
+target_sources(processor_test PRIVATE
+    tests/test_processor.cpp
+    Source/PluginProcessor.cpp
+    Source/PluginEditor.cpp
+    Source/PedCore/Profile.cpp
+)
+target_include_directories(processor_test PRIVATE Source)
+target_compile_definitions(processor_test PRIVATE
+    PED_EXAMPLE_PROFILE="${CMAKE_CURRENT_SOURCE_DIR}/../examples/profiles/example_kontakt_strings_vln1.json"
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(processor_test PRIVATE
+    juce::juce_audio_utils
+    juce::juce_audio_processors
+    juce::juce_gui_extra
+    juce::juce_core
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+add_test(NAME processor_test COMMAND processor_test)

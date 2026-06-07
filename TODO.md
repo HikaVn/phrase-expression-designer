@@ -64,8 +64,12 @@ resolves an item.
 - [x] **Build the plugin locally** — AU/VST3/Standalone built (CMake+Ninja, CLT
       only, no full Xcode) and the **AU passes `auval`** (`AU VALIDATION
       SUCCEEDED`). Installed to `~/Library/Audio/Plug-Ins`. See docs/PLUGIN.md.
+- [x] **Headless runtime test** (`plugin/tests/test_processor.cpp`, `ctest`):
+      drives `processBlock` and verifies input-CC→calibrated-CC, passthrough, and
+      keyswitch tap/release in the real plugin code (no DAW).
 - [ ] **Play-test in Logic/Cubase**: load a real instrument, drive intent live
-      (mod wheel → CC1), confirm articulation switching sounds right.
+      (mod wheel → CC1), confirm articulation switching sounds right (needs a
+      human + audio; can't be automated here).
 - [x] Plugin: read *incoming* CC as the intent source (`inputCc` on a mapping)
       and apply `smoothingMs` in real time (one-pole, parity-tested). `lookAheadMs`
       is offline-only by design — real-time can't read the future (causality).
