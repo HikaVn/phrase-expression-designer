@@ -31,6 +31,7 @@ from ..exporters.logic import export_logic_articulation_set
 from ..instrument_scan import scan_instruments
 from ..midi.reader import read_midi
 from ..midi.writer import write_midi
+from ..profile_template import build_starter_profile, infer_engine, slugify
 from ..profiles.calibration_assistant import (
     build_from_dynamics,
     build_from_measurements,
@@ -98,6 +99,37 @@ def _cmd_list_instruments(args: argparse.Namespace) -> int:
         )
         print(f"{p.format:<4}  {p.name:<{name_w}}  {(p.manufacturer or ''):<{man_w}}  {codes}")
     print(f"\n{len(plugins)} plugin(s). Use a name for a profile's \"library\" field.")
+    return 0
+
+
+def _cmd_new_profile(args: argparse.Namespace) -> int:
+    engine = args.engine or infer_engine(args.from_instrument) or args.from_instrument
+    library = args.library or args.from_instrument
+    profile_id = args.id or slugify(args.from_instrument or library or engine, args.patch)
+
+    out = Path(args.output) if args.output else Path(f"{profile_id}.json")
+    if out.exists() and not args.force:
+        print(f"error: {out} already exists (use --force to overwrite)", file=sys.stderr)
+        return 2
+
+    profile = build_starter_profile(
+        profile_id, engine=engine, library=library, patch=args.patch,
+        note_naming=args.note_naming,
+    )
+    report = validate_profile(profile)
+    if not report.ok:  # should not happen for the template, but never write a broken profile
+        for issue in report.errors:
+            print(issue, file=sys.stderr)
+        return 1
+
+    profile.save(out)
+    print(
+        f"Wrote starter profile {profile_id!r} to {out}\n"
+        f"  engine={engine!r} library={library!r} patch={args.patch!r} "
+        f"noteNaming={args.note_naming}\n"
+        f"  Next: edit library/patch, the keyswitch notes, and calibrate "
+        f"(`ped calibrate --id dyn_default --levels ... --profile {out}`)."
+    )
     return 0
 
 
@@ -322,6 +354,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--json", action="store_true", help="output JSON")
     p.set_defaults(func=_cmd_list_instruments)
+
+    p = sub.add_parser("new-profile", help="scaffold a starter instrument profile JSON")
+    p.add_argument("--id", help="profile id (default: derived from the name)")
+    p.add_argument("--from-instrument", help="installed plugin name (fills engine/library)")
+    p.add_argument("--engine", help="engine, e.g. Kontakt (default: inferred)")
+    p.add_argument("--library", help="sample library name")
+    p.add_argument("--patch", help="patch name")
+    p.add_argument("--note-naming", choices=["C3=60", "C4=60"], default="C3=60")
+    p.add_argument("-o", "--output", help="output path (default: <id>.json)")
+    p.add_argument("--force", action="store_true", help="overwrite if the file exists")
+    p.set_defaults(func=_cmd_new_profile)
 
     p = sub.add_parser("validate-project", help="validate a project JSON (structure + refs)")
     p.add_argument("project")

@@ -117,6 +117,18 @@ ped list-instruments --format au --json   # 機械可読（type/subtype/manufact
 取れるのは**プラグイン名まで**（例：`Kontakt 8`）。その中の**パッチ名**は音源固有なので、
 `patch` 欄は手で記入します（DAW/サンプラーの仕様上、自動取得はできません）。
 
+ゼロから書く代わりに、**雛形を生成**するのが手早いです（legato/sustain/staccato＋
+CC1/11/21＋キャリブレーション3種入りの“動く”プロファイルが出ます）：
+
+```bash
+ped new-profile --from-instrument "Kontakt 8" --library "My Strings" \
+    --patch "Violin 1" -o my_strings.json
+ped validate-profile my_strings.json     # 生成直後から OK
+```
+
+生成後は `library` / `patch` / キースイッチのノート番号を実機に合わせて直し、
+`ped calibrate` で効きを合わせれば完成です。
+
 ---
 
 ## 4. 表情をつける3つの方法
