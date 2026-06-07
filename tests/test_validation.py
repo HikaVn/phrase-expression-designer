@@ -54,6 +54,25 @@ def test_note_name_mismatch_warns(example_profile_dict):
     assert any(i.code == "keyswitch_note_mismatch" for i in report.warnings)
 
 
+def test_articulation_cc_trigger_out_of_range(example_profile_dict):
+    data = copy.deepcopy(example_profile_dict)
+    # turn legato into a cc trigger with an out-of-range value
+    for art in data["articulations"]:
+        if art["id"] == "legato":
+            art["trigger"] = {"type": "cc", "cc": 32, "value": 200}
+    report = validate_profile(InstrumentProfile.from_dict(data))
+    assert any(i.code == "articulation_trigger_range" for i in report.errors)
+
+
+def test_articulation_program_trigger_out_of_range(example_profile_dict):
+    data = copy.deepcopy(example_profile_dict)
+    for art in data["articulations"]:
+        if art["id"] == "spiccato":
+            art["trigger"] = {"type": "program_change", "program": 999}
+    report = validate_profile(InstrumentProfile.from_dict(data))
+    assert any(i.code == "articulation_trigger_range" for i in report.errors)
+
+
 def test_missing_cc_mappings_warns(example_profile_dict):
     data = copy.deepcopy(example_profile_dict)
     data["ccMappings"] = []

@@ -70,6 +70,20 @@ def validate_profile(profile: InstrumentProfile) -> ValidationReport:
                 f"range {profile.playable_range.low}-{profile.playable_range.high}.",
             )
 
+    # Articulation cc / program_change trigger values must be in 0-127, or they
+    # produce invalid MIDI when an articulation fires on export.
+    for art in profile.articulations:
+        trig = art.trigger
+        if trig is None:
+            continue
+        for label, value in (("cc", trig.cc), ("value", trig.value), ("program", trig.program)):
+            if value is not None and not 0 <= value <= 127:
+                report.add(
+                    ERROR,
+                    "articulation_trigger_range",
+                    f"Articulation {art.id!r} trigger {label}={value} is outside 0-127.",
+                )
+
     # CC mappings.
     if not profile.cc_mappings:
         report.add(WARNING, "cc_unassigned", "Profile defines no ccMappings.")

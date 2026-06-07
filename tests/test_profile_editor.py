@@ -98,3 +98,39 @@ def test_edit_loop_quit_without_saving():
     p = base()
     saved = edit_profile_wizard(p, input_fn=scripted(["0"]), output_fn=sink())  # skip = quit
     assert saved is False
+
+
+def test_add_articulation_rejects_out_of_range_cc():
+    p = base()
+    n = len(p.articulations)
+    # id, name, type(#1 long), trigger(#2 cc), cc number "200" -> cancelled
+    answers = ["mute", "Mute", "1", "2", "200"]
+    add_articulation(p, input_fn=scripted(answers), output_fn=sink())
+    assert len(p.articulations) == n  # not added
+
+
+def test_add_articulation_rejects_out_of_range_program():
+    p = base()
+    n = len(p.articulations)
+    # id, name, type(#1), trigger(#3 program_change), program "200" -> cancelled
+    answers = ["pc", "PC", "1", "3", "200"]
+    add_articulation(p, input_fn=scripted(answers), output_fn=sink())
+    assert len(p.articulations) == n
+
+
+def test_add_articulation_accepts_valid_cc():
+    p = base()
+    # cc=32 value=64
+    answers = ["mute", "Mute", "1", "2", "32", "64"]
+    add_articulation(p, input_fn=scripted(answers), output_fn=sink())
+    art = p.articulation_by_id("mute")
+    assert art is not None and art.trigger.cc == 32 and art.trigger.value == 64
+    assert validate_profile(p).ok
+
+
+def test_add_cc_mapping_bad_smoothing_does_not_crash():
+    p = base()
+    # parameter, cc, curve(#1), inputCc blank, smoothing "10ms" -> tolerated, uses 0
+    add_cc_mapping(p, input_fn=scripted(["air", "75", "1", "", "10ms"]), output_fn=sink())
+    m = p.mapping_for("air")
+    assert m is not None and m.smoothing_ms == 0.0

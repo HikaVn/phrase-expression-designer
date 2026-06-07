@@ -25,6 +25,12 @@ from .profiles.validation import validate_profile
 from .wizards import calibration_wizard
 
 
+def _byte(raw: str) -> int | None:
+    """Parse a MIDI 0-127 value; None for blank or out-of-range/invalid input."""
+    raw = raw.strip()
+    return int(raw) if raw.isdigit() and 0 <= int(raw) <= 127 else None
+
+
 def _parse_note(raw: str, naming: str) -> int | None:
     """A keyswitch note as a number ('24') or a name ('C0'), per noteNaming."""
     raw = raw.strip()
@@ -96,12 +102,22 @@ def add_articulation(
         mode = c([(m, m) for m in KEYSWITCH_MODES], "Mode") or "latch"
         trigger = Trigger(type="keyswitch", note=note, mode=mode)
     elif trig_type == "cc":
-        cc, val = a("CC number"), a("CC value")
-        trigger = Trigger(type="cc", cc=int(cc) if cc.isdigit() else None,
-                          value=int(val) if val.isdigit() else None)
+        cc = _byte(a("CC number (0-127)"))
+        if cc is None:
+            output_fn("  CC number must be 0-127 — cancelled")
+            return
+        val_raw = a("CC value (0-127, blank for none)")
+        value = _byte(val_raw) if val_raw else None
+        if val_raw and value is None:
+            output_fn("  CC value must be 0-127 — cancelled")
+            return
+        trigger = Trigger(type="cc", cc=cc, value=value)
     else:  # program_change
-        prog = a("Program")
-        trigger = Trigger(type="program_change", program=int(prog) if prog.isdigit() else None)
+        program = _byte(a("Program (0-127)"))
+        if program is None:
+            output_fn("  program must be 0-127 — cancelled")
+            return
+        trigger = Trigger(type="program_change", program=program)
 
     profile.articulations.append(Articulation(id=art_id, name=name, type=art_type, trigger=trigger))
     output_fn(f"  added articulation {art_id!r}")
@@ -142,14 +158,20 @@ def add_cc_mapping(
         if curve_options else None
     )
     in_cc = a("Input CC (live source, blank for none)")
-    smooth = a("Smoothing ms (blank for 0)")
+    smooth_raw = a("Smoothing ms (blank for 0)")
+    smoothing = 0.0
+    if smooth_raw:
+        try:
+            smoothing = max(0.0, float(smooth_raw))
+        except ValueError:
+            output_fn(f"  '{smooth_raw}' is not a number — using 0")
     profile.cc_mappings.append(
         CCMapping(
             internal_parameter=parameter,
             target={"type": "cc", "cc": int(cc)},
             curve_id=curve_id,
             input_cc=int(in_cc) if in_cc.isdigit() else None,
-            smoothing_ms=float(smooth) if smooth else 0.0,
+            smoothing_ms=smoothing,
         )
     )
     output_fn(f"  added mapping {parameter} -> CC{cc}")
