@@ -41,6 +41,7 @@ from ..profiles.calibration_assistant import (
 from ..profiles.instrument_profile import InstrumentProfile
 from ..profiles.validation import validate_profile
 from ..project_checks import validate_project_dict
+from ..wizards import calibration_wizard, new_profile_wizard
 
 
 def _cmd_inspect_midi(args: argparse.Namespace) -> int:
@@ -103,19 +104,22 @@ def _cmd_list_instruments(args: argparse.Namespace) -> int:
 
 
 def _cmd_new_profile(args: argparse.Namespace) -> int:
-    engine = args.engine or infer_engine(args.from_instrument) or args.from_instrument
-    library = args.library or args.from_instrument
-    profile_id = args.id or slugify(args.from_instrument or library or engine, args.patch)
+    if args.interactive:
+        profile = new_profile_wizard()
+    else:
+        engine = args.engine or infer_engine(args.from_instrument) or args.from_instrument
+        library = args.library or args.from_instrument
+        profile_id = args.id or slugify(args.from_instrument or library or engine, args.patch)
+        profile = build_starter_profile(
+            profile_id, engine=engine, library=library, patch=args.patch,
+            note_naming=args.note_naming,
+        )
 
-    out = Path(args.output) if args.output else Path(f"{profile_id}.json")
+    out = Path(args.output) if args.output else Path(f"{profile.id}.json")
     if out.exists() and not args.force:
         print(f"error: {out} already exists (use --force to overwrite)", file=sys.stderr)
         return 2
 
-    profile = build_starter_profile(
-        profile_id, engine=engine, library=library, patch=args.patch,
-        note_naming=args.note_naming,
-    )
     report = validate_profile(profile)
     if not report.ok:  # should not happen for the template, but never write a broken profile
         for issue in report.errors:
@@ -124,9 +128,9 @@ def _cmd_new_profile(args: argparse.Namespace) -> int:
 
     profile.save(out)
     print(
-        f"Wrote starter profile {profile_id!r} to {out}\n"
-        f"  engine={engine!r} library={library!r} patch={args.patch!r} "
-        f"noteNaming={args.note_naming}\n"
+        f"Wrote starter profile {profile.id!r} to {out}\n"
+        f"  engine={profile.engine!r} library={profile.library!r} "
+        f"patch={profile.patch!r} noteNaming={profile.note_naming}\n"
         f"  Next: edit library/patch, the keyswitch notes, and calibrate "
         f"(`ped calibrate --id dyn_default --levels ... --profile {out}`)."
     )
@@ -165,7 +169,16 @@ def _emit_calibration(curve, profile_path: str | None, output: str | None) -> in
 
 
 def _cmd_calibrate(args: argparse.Namespace) -> int:
-    curve = build_from_dynamics(args.id, parse_levels(args.levels), interpolation=args.interp)
+    if args.interactive:
+        curve = calibration_wizard(curve_id_default=args.id or "dyn_default")
+    else:
+        if not args.levels:
+            print("error: --levels is required (or use --interactive)", file=sys.stderr)
+            return 2
+        if not args.id:
+            print("error: --id is required (or use --interactive)", file=sys.stderr)
+            return 2
+        curve = build_from_dynamics(args.id, parse_levels(args.levels), interpolation=args.interp)
     return _emit_calibration(curve, args.profile, args.output)
 
 
@@ -364,6 +377,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--note-naming", choices=["C3=60", "C4=60"], default="C3=60")
     p.add_argument("-o", "--output", help="output path (default: <id>.json)")
     p.add_argument("--force", action="store_true", help="overwrite if the file exists")
+    p.add_argument(
+        "-i", "--interactive", action="store_true",
+        help="pick an installed instrument and fill fields by prompts",
+    )
     p.set_defaults(func=_cmd_new_profile)
 
     p = sub.add_parser("validate-project", help="validate a project JSON (structure + refs)")
@@ -381,15 +398,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_cmd_export_articulations)
 
     p = sub.add_parser("calibrate", help="build a calibration curve from dynamic levels")
-    p.add_argument("--id", required=True, help="calibration curve id")
+    p.add_argument("--id", help="calibration curve id (required unless --interactive)")
     p.add_argument(
         "--levels",
-        required=True,
-        help="dynamic table, e.g. 'ppp=8,p=35,mf=68,ff=110,fff=120'",
+        help="dynamic table, e.g. 'ppp=8,p=35,mf=68,ff=110,fff=120' (or use --interactive)",
     )
     p.add_argument("--interp", default="monotonic", choices=["linear", "monotonic"])
     p.add_argument("--profile", help="profile JSON to add/replace the curve in")
     p.add_argument("-o", "--output", help="write the curve JSON here (else stdout)")
+    p.add_argument(
+        "-i", "--interactive", action="store_true",
+        help="enter a CC value per dynamic (ppp..fff) by prompts",
+    )
     p.set_defaults(func=_cmd_calibrate)
 
     p = sub.add_parser(

@@ -129,6 +129,12 @@ ped validate-profile my_strings.json     # 生成直後から OK
 生成後は `library` / `patch` / キースイッチのノート番号を実機に合わせて直し、
 `ped calibrate` で効きを合わせれば完成です。
 
+対話で作るなら `-i`：インストール済み音源を**番号で選ぶ**だけで、残りの項目も順に質問されます。
+
+```bash
+ped new-profile -i -o my_strings.json
+```
+
 ---
 
 ## 4. 表情をつける3つの方法
@@ -165,6 +171,9 @@ ped calibrate --id dyn --levels "ppp=8,p=35,mf=68,ff=110,fff=120" \
 # B) 測定の反転: 各CCで測った音量を渡すと、知覚的に均等な intent→CC カーブを生成
 ped calibrate-auto --id dyn \
     --measure "0=-60,32=-40,64=-28,96=-18,127=-10"
+
+# C) 対話: ppp..fff を1つずつ聞かれて入力（空欄でスキップ）
+ped calibrate --interactive --profile examples/profiles/example_kontakt_strings_vln1.json
 ```
 
 `--profile` を付けると曲線をプロファイルに保存、付けないと JSON を標準出力（`-o` でファイル）。
