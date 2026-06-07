@@ -31,6 +31,7 @@ private:
     std::unique_ptr<SliderAttachment> articulationAtt;
 
     juce::TextButton loadButton { "Load Profile…" };
+    juce::TextButton reloadButton { "Reload" };
     juce::Label profileLabel;
     std::unique_ptr<juce::FileChooser> chooser;
 

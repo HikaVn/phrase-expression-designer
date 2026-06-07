@@ -26,6 +26,7 @@ juce_add_plugin(PhraseExpressionDesigner
     IS_MIDI_EFFECT TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
+    COPY_PLUGIN_AFTER_BUILD TRUE   # auto-install AU/VST3 to ~/Library/Audio/Plug-Ins
     FORMATS AU VST3 Standalone
 )
 

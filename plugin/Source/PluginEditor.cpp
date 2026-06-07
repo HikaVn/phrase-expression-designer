@@ -41,6 +41,9 @@ PedAudioProcessorEditor::PedAudioProcessorEditor (PedAudioProcessor& p)
     addAndMakeVisible (loadButton);
     loadButton.onClick = [this] { openProfile(); };
 
+    addAndMakeVisible (reloadButton);
+    reloadButton.onClick = [this] { processorRef.reloadProfile(); refreshProfileLabel(); };
+
     profileLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (profileLabel);
     refreshProfileLabel();
@@ -83,7 +86,10 @@ void PedAudioProcessorEditor::resized()
     area.removeFromTop (32); // title
 
     auto top = area.removeFromTop (40);
-    loadButton.setBounds (top.removeFromLeft (130));
+    loadButton.setBounds (top.removeFromLeft (120));
+    top.removeFromLeft (6);
+    reloadButton.setBounds (top.removeFromLeft (74));
+    top.removeFromLeft (6);
     profileLabel.setBounds (top);
 
     auto knobs = area.removeFromTop (150);

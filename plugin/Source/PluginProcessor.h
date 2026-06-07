@@ -44,6 +44,7 @@ public:
 
     // -- profile management (called from the editor) --
     bool loadProfile (const juce::File&);
+    bool reloadProfile(); // re-read the current profile file (after editing it)
     const ped::InstrumentProfile& getProfile() const { return profile; }
     juce::String getProfilePath() const { return profilePath; }
 

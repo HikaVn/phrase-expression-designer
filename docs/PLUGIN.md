@@ -101,22 +101,39 @@ clang++ -std=c++17 -I plugin/Source plugin/tests/test_pedcore.cpp -o /tmp/pedcor
 
 ## Install & validate (macOS)
 
-Copy the bundles into the user plug-in folders (use `ditto` to preserve the
-bundle + ad-hoc signature):
+The build **auto-installs** AU + VST3 to the user plug-in folders
+(`COPY_PLUGIN_AFTER_BUILD` in `CMakeLists.txt`), so a normal
+`cmake --build … --target …_AU` (or `_VST3`) copies them to
+`~/Library/Audio/Plug-Ins/{Components,VST3}` for you. (Standalone stays in
+`build/`.) Validate the AU:
 
 ```bash
-ART="plugin/build/PhraseExpressionDesigner_artefacts/Release"
-ditto "$ART/AU/Phrase Expression Designer.component"  "$HOME/Library/Audio/Plug-Ins/Components/Phrase Expression Designer.component"
-ditto "$ART/VST3/Phrase Expression Designer.vst3"     "$HOME/Library/Audio/Plug-Ins/VST3/Phrase Expression Designer.vst3"
-
-# validate the AU (type aumi = MIDI processor, subtype Ped1, manufacturer Hkvn)
+# type aumi = MIDI processor, subtype Ped1, manufacturer Hkvn
 auval -v aumi Ped1 Hkvn      # expect: AU VALIDATION SUCCEEDED
 ```
+
+To install manually instead (e.g. a Release artefact from elsewhere), `ditto`
+the bundle into the same folders.
 
 In **Logic**, add it as a **MIDI FX** on an instrument track (it is a MIDI
 processor, manufacturer "HikaVn"). In **Cubase/Studio One/REAPER**, insert the
 VST3 as a MIDI insert *before* the instrument. The Standalone `.app` runs with no
 install for a quick GUI smoke test.
+
+## Iterating (what needs a restart)
+
+A plugin is a dynamic library the host loads into its own process, so the rules
+differ by what you changed:
+
+- **Edited a profile JSON** → no restart. Click **Reload** in the plugin UI to
+  re-read the current file (or **Load Profile…** to pick another).
+- **Moved a parameter / automation** → real-time, nothing to do.
+- **Rebuilt the plugin (C++)** → the host still holds the old binary in memory,
+  so **quit and reopen Logic/Cubase** to pick up the new build. For a fast loop,
+  test the **Standalone `.app`** instead (same engine, just relaunch the app).
+- If a rebuild isn't picked up (stale AU cache):
+  `killall -9 AudioComponentRegistrar; rm -rf ~/Library/Caches/AudioUnitCache`,
+  then relaunch.
 
 ## Tests
 

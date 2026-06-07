@@ -132,6 +132,11 @@ bool PedAudioProcessor::loadProfile (const juce::File& file)
     return true;
 }
 
+bool PedAudioProcessor::reloadProfile()
+{
+    return profilePath.isNotEmpty() && loadProfile (juce::File (profilePath));
+}
+
 void PedAudioProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
     auto state = apvts.copyState();
