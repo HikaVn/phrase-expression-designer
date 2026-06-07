@@ -67,6 +67,7 @@ ped calibrate --id dyn --levels "ppp=8,p=35,mf=68,ff=110,fff=120" \
 | `validate-project` | Check a project (structure + refs, optional profile cross-check) |
 | `list-instruments` | List installed instrument plugins (AU via `auval`, VST3 by folder) |
 | `new-profile` | Scaffold a valid starter instrument profile JSON |
+| `edit-profile` | Interactively edit an existing profile (metadata/articulations/CC/calibration) |
 | `apply-template` | Add one template curve (swell, arch, …) |
 | `apply-macro` | Add a multi-parameter macro (emotional_swell, cinematic_rise, …) |
 | `paint-phrase` | Derive volume/vibrato/timbre curves from one intent line |

@@ -135,6 +135,13 @@ ped validate-profile my_strings.json     # 生成直後から OK
 ped new-profile -i -o my_strings.json
 ```
 
+既存プロファイルの**編集**も対話でできます（メタ情報・奏法・CCマッピング・キャリブレーションの
+追加/削除）。保存前に検証し、エラーがあれば書き込みません：
+
+```bash
+ped edit-profile my_strings.json
+```
+
 ---
 
 ## 4. 表情をつける3つの方法
