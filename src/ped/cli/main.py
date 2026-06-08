@@ -47,9 +47,29 @@ from ..project_checks import validate_project_dict
 from ..wizards import calibration_wizard, new_profile_wizard
 
 
+def _write_project(project: Project, out: Path, input_path: str | None = None) -> None:
+    """Write a project by output extension: .json -> project JSON, else MIDI."""
+    if out.suffix == ".json":
+        project.save(out)
+    else:
+        write_midi(project, out, input_path=input_path)
+
+
 def _cmd_enter_notes(args: argparse.Namespace) -> int:
     if args.into:
         project = Project.load(args.into)
+        # Don't clobber the input by default (AGENTS.md): require -o or --in-place.
+        if args.output:
+            out = Path(args.output)
+        elif args.in_place:
+            out = Path(args.into)
+        else:
+            print(
+                f"error: refusing to overwrite the input project {args.into}; "
+                f"pass -o OUTPUT or --in-place",
+                file=sys.stderr,
+            )
+            return 2
         track = project.track_by_name(args.track)
         if track is None:
             track = Track(id=f"track_{len(project.tracks)}", name=args.track)
@@ -62,9 +82,8 @@ def _cmd_enter_notes(args: argparse.Namespace) -> int:
             id_prefix=f"n{len(track.notes)}_",
         )
         track.notes.extend(notes)
-        out = Path(args.output) if args.output else Path(args.into)
-        project.save(out)
-        print(f"Added {len(notes)} notes to track {args.track!r} in {out}.")
+        _write_project(project, out, input_path=None if args.in_place else args.into)
+        print(f"Added {len(notes)} notes to track {args.track!r}; wrote {out}.")
         return 0
 
     project = Project(project_name=args.track, ppq=args.ppq)
@@ -78,10 +97,7 @@ def _cmd_enter_notes(args: argparse.Namespace) -> int:
     project.tracks.append(track)
 
     out = Path(args.output) if args.output else Path(f"{args.track}.mid")
-    if out.suffix == ".json":
-        project.save(out)
-    else:
-        write_midi(project, out)
+    _write_project(project, out)
     span = track.tick_span()[1]
     print(f"Wrote {out}: {len(notes)} notes, {span} ticks (~{span / args.ppq:g} beats).")
     return 0
@@ -425,6 +441,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--articulation", help="tag every note with this articulation id")
     p.add_argument("--track", default="Lead", help="track name")
     p.add_argument("--into", help="append to a track in this existing project JSON")
+    p.add_argument(
+        "--in-place", action="store_true",
+        help="with --into: overwrite the input project (otherwise pass -o)",
+    )
     p.add_argument("-o", "--output", help="output .mid or .json (default: <track>.mid)")
     p.set_defaults(func=_cmd_enter_notes)
 

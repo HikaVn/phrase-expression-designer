@@ -88,7 +88,8 @@ ped enter-notes "4 C D E F  2 G | 4 A G F E  1 C" --track "Lead" -o lead.mid
 - `r`=休符、`|`=小節線（無視）。
 
 出力は拡張子で判定（`.mid`=MIDI、`.json`=プロジェクト）。`--into existing.json --track 名前`
-で既存トラックの末尾に**追記**もできます。`--articulation legato` で全音符に奏法タグ付け。
+で既存トラックの末尾に**追記**もできます（入力を守るため、`-o 別名` か `--in-place` の指定が必要）。
+`--articulation legato` で全音符に奏法タグ付け。
 
 ---
 
