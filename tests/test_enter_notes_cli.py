@@ -44,6 +44,18 @@ def test_into_output_mid_writes_real_midi(tmp_path):
     assert len(Project.load(proj).tracks[0].notes) == 2
 
 
+def test_bad_step_keys_clean_error(capsys):
+    rc = main(["step", "--keys", "C Z", "-o", "/tmp/never.json"])
+    assert rc == 2
+    assert "unknown key token" in capsys.readouterr().err
+
+
+def test_bad_enter_notes_token_clean_error(capsys):
+    rc = main(["enter-notes", "C H D", "-o", "/tmp/never.mid"])
+    assert rc == 2
+    assert "error:" in capsys.readouterr().err
+
+
 def test_plain_output_json(tmp_path):
     out = tmp_path / "m.project.json"
     rc = main(["enter-notes", "8 G G 2 Eb", "--track", "Motif", "-o", str(out)])
