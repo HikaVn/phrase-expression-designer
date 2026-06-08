@@ -24,6 +24,7 @@ private:
 
     void openProfile();
     void refreshProfileLabel();
+    void writeMidiFromText();
 
     PedAudioProcessor& processorRef;
 
@@ -39,6 +40,12 @@ private:
     juce::TextButton reloadButton { "Reload" };
     juce::Label profileLabel;
     std::unique_ptr<juce::FileChooser> chooser;
+
+    // Sibelius-style text note entry -> MIDI file (type in-plugin, drag into the DAW).
+    juce::TextEditor noteEntry;
+    juce::TextButton writeMidiButton { "Notes → MIDI…" };
+    juce::Label noteHint;
+    std::unique_ptr<juce::FileChooser> saveChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PedAudioProcessorEditor)
 };

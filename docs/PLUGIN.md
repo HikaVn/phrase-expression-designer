@@ -57,6 +57,12 @@ verifiable. Only `Profile.*` and the plugin classes pull in JUCE.
 - Load a profile via **Load Profile…** (the file dialog allows all files — some
   hosts grey out a `.json`-only filter — and validates JSON on load) or by
   **dragging a `.json` onto the plugin window**; **Reload** re-reads the current file.
+- **Notes → MIDI**: a text box takes Sibelius-style note input (the same grammar
+  as `ped enter-notes` — letters, durations, chords `[C E G]`, ties `~`, rests)
+  and **Notes → MIDI…** writes a `.mid` you drag into your DAW. This sidesteps
+  the host's keyboard priority (a focused text field receives keystrokes) and the
+  fact that a MIDI-FX's generated notes aren't recorded to a region. The parser
+  is a JUCE-free C++ port of `ped.note_entry`, unit-tested for parity.
 
 This mirrors the offline `export-midi` path, so a profile behaves the same
 whether you render CC offline in Python or play it live in the DAW.

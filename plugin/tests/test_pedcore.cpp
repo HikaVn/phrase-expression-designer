@@ -5,6 +5,7 @@
 //   clang++ -std=c++17 -I plugin/Source plugin/tests/test_pedcore.cpp -o /tmp/pedcore_test && /tmp/pedcore_test
 #include "PedCore/Calibration.h"
 #include "PedCore/Curve.h"
+#include "PedCore/NoteEntry.h"
 #include "PedCore/Smoothing.h"
 
 #include <cassert>
@@ -124,6 +125,50 @@ int main()
         OnePole g;
         g.reset (0.0);
         checkClose (g.process (0.7, 10.0, 0.0), 0.7, "onepole.noSmoothing");
+    }
+
+    // --- NoteEntry parser parity (vs ped.note_entry) ---
+    {
+        auto pitches = [] (const char* s) {
+            auto r = parseNoteEntry (s, 480);
+            std::vector<int> out;
+            for (auto& n : r.notes) out.push_back (n.pitch);
+            return out;
+        };
+        auto eqVec = [&] (std::vector<int> got, std::vector<int> want, const char* what) {
+            if (got != want) { std::printf ("FAIL %s\n", what); ++failures; }
+        };
+        eqVec (pitches ("C D E F G"), { 60, 62, 64, 65, 67 }, "entry.scale");
+        eqVec (pitches ("[C E G]"), { 60, 64, 67 }, "entry.chord");
+        eqVec (pitches ("[C B]"), { 60, 71 }, "entry.chordStackUp");
+        eqVec (pitches ("[E C]"), { 64, 72 }, "entry.chordStackUp2");
+        eqVec (pitches ("C5 C4 C3"), { 72, 60, 48 }, "entry.explicitOctave");
+
+        {   // durations + start ticks
+            auto r = parseNoteEntry ("4 C 2 D 4 E", 480);
+            checkEq ((long) r.notes.size(), 3, "entry.count");
+            checkEq (r.notes[1].durationTick, 960, "entry.halfDur");
+            checkEq (r.notes[2].startTick, 1440, "entry.startTick");
+        }
+        {   // dotted
+            auto r = parseNoteEntry ("4. C", 480);
+            checkEq (r.notes[0].durationTick, 720, "entry.dotted");
+        }
+        {   // tie merges two quarters into one note
+            auto r = parseNoteEntry ("4 C~ C", 480);
+            checkEq ((long) r.notes.size(), 1, "entry.tieCount");
+            checkEq (r.notes[0].durationTick, 960, "entry.tieDur");
+        }
+        {   // tied chord across a barline
+            auto r = parseNoteEntry ("2 [C E G]~ | 2 [C E G]", 480);
+            checkEq ((long) r.notes.size(), 3, "entry.tieChordCount");
+            checkEq (r.notes[0].durationTick, 1920, "entry.tieChordDur");
+        }
+        {   // errors are returned, not thrown
+            checkEq (parseNoteEntry ("C H D", 480).ok ? 1 : 0, 0, "entry.badToken");
+            checkEq (parseNoteEntry ("4 C~ D", 480).ok ? 1 : 0, 0, "entry.badTie");
+            checkEq (parseNoteEntry ("C10", 480).ok ? 1 : 0, 0, "entry.outOfRange");
+        }
     }
 
     if (failures == 0) { std::printf ("PedCore parity: all checks passed\n"); return 0; }

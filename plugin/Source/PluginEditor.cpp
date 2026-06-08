@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 
+#include "PedCore/NoteEntry.h"
+
 namespace
 {
 void configureRotary (juce::Slider& s)
@@ -48,7 +50,21 @@ PedAudioProcessorEditor::PedAudioProcessorEditor (PedAudioProcessor& p)
     addAndMakeVisible (profileLabel);
     refreshProfileLabel();
 
-    setSize (480, 300);
+    // --- text note entry -> MIDI ---
+    noteEntry.setMultiLine (true);
+    noteEntry.setReturnKeyStartsNewLine (true);
+    noteEntry.setTextToShowWhenEmpty ("e.g.  4 C D E F  2 G | 4 [C E G]  1 G~",
+                                      juce::Colours::grey);
+    addAndMakeVisible (noteEntry);
+    addAndMakeVisible (writeMidiButton);
+    writeMidiButton.onClick = [this] { writeMidiFromText(); };
+    noteHint.setJustificationType (juce::Justification::centredLeft);
+    noteHint.setFont (juce::Font (juce::FontOptions (11.0f)));
+    noteHint.setText ("Type notes, then Notes → MIDI to save a .mid to drag into your DAW.",
+                      juce::dontSendNotification);
+    addAndMakeVisible (noteHint);
+
+    setSize (520, 420);
 }
 
 void PedAudioProcessorEditor::refreshProfileLabel()
@@ -70,6 +86,64 @@ void PedAudioProcessorEditor::openProfile()
         auto file = fc.getResult();
         if (file.existsAsFile() && processorRef.loadProfile (file))
             refreshProfileLabel();
+    });
+}
+
+void PedAudioProcessorEditor::writeMidiFromText()
+{
+    constexpr int ppq = 480;
+    auto parsed = ped::parseNoteEntry (noteEntry.getText().toStdString(), ppq, 4, 4);
+    if (! parsed.ok)
+    {
+        noteHint.setText ("Error: " + juce::String (parsed.error), juce::dontSendNotification);
+        return;
+    }
+    if (parsed.notes.empty())
+    {
+        noteHint.setText ("No notes parsed.", juce::dontSendNotification);
+        return;
+    }
+
+    juce::MidiMessageSequence seq;
+    for (const auto& n : parsed.notes)
+    {
+        auto on = juce::MidiMessage::noteOn (1, n.pitch, (juce::uint8) 90);
+        on.setTimeStamp ((double) n.startTick);
+        auto off = juce::MidiMessage::noteOff (1, n.pitch);
+        off.setTimeStamp ((double) (n.startTick + n.durationTick));
+        seq.addEvent (on);
+        seq.addEvent (off);
+    }
+    seq.updateMatchedPairs();
+
+    auto dir = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                   .getChildFile ("Library/Audio/Presets/HikaVn/Phrase Expression Designer");
+    dir.createDirectory();
+    saveChooser = std::make_unique<juce::FileChooser> ("Save phrase as MIDI",
+                                                       dir.getChildFile ("phrase.mid"), "*.mid");
+    auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+               | juce::FileBrowserComponent::warnAboutOverwriting;
+    saveChooser->launchAsync (flags, [this, seq] (const juce::FileChooser& fc)
+    {
+        auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        file = file.withFileExtension ("mid");
+        juce::MidiFile mf;
+        mf.setTicksPerQuarterNote (480);
+        mf.addTrack (seq);
+        file.deleteFile();
+        if (auto stream = file.createOutputStream())
+        {
+            mf.writeTo (*stream);
+            stream->flush();
+            noteHint.setText ("Wrote " + file.getFileName() + " — drag it into your DAW.",
+                              juce::dontSendNotification);
+        }
+        else
+        {
+            noteHint.setText ("Could not write " + file.getFullPathName(), juce::dontSendNotification);
+        }
     });
 }
 
@@ -130,7 +204,16 @@ void PedAudioProcessorEditor::resized()
     place (timbre, timbreLabel, knobs.removeFromLeft (w));
     place (vibrato, vibratoLabel, knobs);
 
-    auto bottom = area.removeFromTop (40);
-    articulationLabel.setBounds (bottom.removeFromLeft (110));
-    articulation.setBounds (bottom.removeFromLeft (120));
+    auto artRow = area.removeFromTop (34);
+    articulationLabel.setBounds (artRow.removeFromLeft (110));
+    articulation.setBounds (artRow.removeFromLeft (120));
+
+    area.removeFromTop (6);
+    noteHint.setBounds (area.removeFromTop (16));
+    auto entryRow = area.removeFromTop (28);
+    writeMidiButton.setBounds (entryRow.removeFromRight (120));
+    entryRow.removeFromRight (6);
+    // (entryRow left part is spare)
+    area.removeFromBottom (18); // leave room for the drop hint in paint()
+    noteEntry.setBounds (area.removeFromTop (juce::jmax (40, area.getHeight())));
 }
