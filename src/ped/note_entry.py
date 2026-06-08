@@ -26,6 +26,7 @@ noteNaming — note entry is about pitches, not keyswitch spelling.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -55,11 +56,27 @@ def _nearest_midi(semitone: int, reference: int, octave_shift: int) -> int:
     return semitone + 12 * k + 12 * octave_shift
 
 
-def _resolve(signs: str, letter: str, accidentals: str, octave: str | None, ref: int) -> int:
+def _above_midi(semitone: int, reference: int, octave_shift: int) -> int:
+    """Lowest octave of ``semitone`` at or above ``reference`` (then shifted)."""
+    k = math.ceil((reference - semitone) / 12)
+    return semitone + 12 * k + 12 * octave_shift
+
+
+def _resolve(
+    signs: str,
+    letter: str,
+    accidentals: str,
+    octave: str | None,
+    ref: int,
+    *,
+    stack_up: bool = False,
+) -> int:
     semitone = _PC[letter.upper()] + sum(_ACCIDENTAL[a] for a in accidentals)
     shift = signs.count("+") - signs.count("-")
     if octave:
         return (int(octave) + 1) * 12 + semitone + 12 * shift
+    if stack_up:  # chord tones above the first stack upward from the previous tone
+        return _above_midi(semitone, ref, shift)
     return _nearest_midi(semitone, ref, shift)
 
 
@@ -96,12 +113,14 @@ def _apply_group(
     length = state.length()
     ref = state.prev_midi if state.prev_midi is not None else state.reference
     midis: list[int] = []
-    for signs, letter, accidentals, octave in specs:
-        midi = _resolve(signs, letter, accidentals, octave, ref)
+    for i, (signs, letter, accidentals, octave) in enumerate(specs):
+        # First tone: nearest to the previous note (melodic). Later chord tones
+        # stack upward from the previous tone (so [C B] is C4 then B4, not B3).
+        midi = _resolve(signs, letter, accidentals, octave, ref, stack_up=i > 0)
         if not 0 <= midi <= 127:
             raise ValueError(f"token {token!r} resolves to MIDI {midi}, outside 0-127")
         midis.append(midi)
-        ref = midi  # stack subsequent chord notes near the previous one
+        ref = midi
 
     covering: dict[int, int] = {}
     for midi in midis:

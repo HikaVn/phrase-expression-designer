@@ -93,6 +93,17 @@ def test_chord_simultaneous_notes():
     assert all(n.duration_tick == 480 for n in notes)
 
 
+def test_chord_tones_stack_upward():
+    # later chord tones go at/above the previous tone, not nearest (which could drop)
+    assert midis("[C B]") == [60, 71]    # B above C, not B3 (59)
+    assert midis("[E C]") == [64, 72]    # C above E, not C4 (60)
+    assert midis("[C E G B]") == [60, 64, 67, 71]  # major seventh, ascending
+
+
+def test_chord_explicit_octave_overrides_stacking():
+    assert midis("[C E C4]") == [60, 64, 60]  # explicit C4 even though it's below E
+
+
 def test_chord_compact_spelling_and_advance():
     notes = parse_note_entry("4 [CEG] D", ppq=PPQ)
     # chord at tick 0, next note advances by one quarter
