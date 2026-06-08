@@ -82,3 +82,66 @@ def test_bad_token_raises():
 def test_out_of_range_raises():
     with pytest.raises(ValueError):
         parse_note_entry("C10")  # (10+1)*12 = 132 > 127
+
+
+# --- chords ---------------------------------------------------------------
+
+def test_chord_simultaneous_notes():
+    notes = parse_note_entry("4 [C E G]", ppq=PPQ)
+    assert [n.pitch for n in notes] == [60, 64, 67]
+    assert all(n.start_tick == 0 for n in notes)        # simultaneous
+    assert all(n.duration_tick == 480 for n in notes)
+
+
+def test_chord_compact_spelling_and_advance():
+    notes = parse_note_entry("4 [CEG] D", ppq=PPQ)
+    # chord at tick 0, next note advances by one quarter
+    assert [n.start_tick for n in notes] == [0, 0, 0, 480]
+    assert notes[-1].pitch == 62  # D after top chord note (67) -> nearest D = 62
+
+
+def test_chord_with_spaces_inside_brackets():
+    a = [n.pitch for n in parse_note_entry("[C E G]", ppq=PPQ)]
+    b = [n.pitch for n in parse_note_entry("[CEG]", ppq=PPQ)]
+    assert a == b == [60, 64, 67]
+
+
+def test_chord_leading_duration():
+    notes = parse_note_entry("2[CEG]", ppq=PPQ)
+    assert all(n.duration_tick == 960 for n in notes)
+
+
+# --- ties -----------------------------------------------------------------
+
+def test_tie_extends_single_note():
+    notes = parse_note_entry("4 C~ C", ppq=PPQ)
+    assert len(notes) == 1                      # two tied quarters -> one note
+    assert notes[0].duration_tick == 960
+    assert notes[0].start_tick == 0
+
+
+def test_tie_across_barline():
+    notes = parse_note_entry("2 C~ | 2 C", ppq=PPQ)
+    assert len(notes) == 1
+    assert notes[0].duration_tick == 1920
+
+
+def test_tie_chord():
+    notes = parse_note_entry("4 [C E G]~ [C E G]", ppq=PPQ)
+    assert len(notes) == 3
+    assert all(n.duration_tick == 960 for n in notes)
+
+
+def test_tie_to_different_pitch_raises():
+    with pytest.raises(ValueError):
+        parse_note_entry("4 C~ D")   # tie must continue same pitch
+
+
+def test_unresolved_tie_at_end_raises():
+    with pytest.raises(ValueError):
+        parse_note_entry("4 C~")
+
+
+def test_tie_before_rest_raises():
+    with pytest.raises(ValueError):
+        parse_note_entry("4 C~ r")
