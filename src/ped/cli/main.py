@@ -19,7 +19,8 @@ import sys
 from pathlib import Path
 
 from ..core.musictime import position_to_tick
-from ..core.project import Project
+from ..core.project import Project, TempoEvent
+from ..core.track import Track
 from ..engine.expression_mapper import map_track_to_cc
 from ..engine.macros import build_macro, macro_names
 from ..engine.performance import apply_legato_overlap, apply_velocity_rules, detect_phrases
@@ -31,6 +32,7 @@ from ..exporters.logic import export_logic_articulation_set
 from ..instrument_scan import scan_instruments
 from ..midi.reader import read_midi
 from ..midi.writer import write_midi
+from ..note_entry import parse_note_entry
 from ..profile_editor import edit_profile_wizard
 from ..profile_template import build_starter_profile, infer_engine, slugify
 from ..profiles.calibration_assistant import (
@@ -43,6 +45,46 @@ from ..profiles.instrument_profile import InstrumentProfile
 from ..profiles.validation import validate_profile
 from ..project_checks import validate_project_dict
 from ..wizards import calibration_wizard, new_profile_wizard
+
+
+def _cmd_enter_notes(args: argparse.Namespace) -> int:
+    if args.into:
+        project = Project.load(args.into)
+        track = project.track_by_name(args.track)
+        if track is None:
+            track = Track(id=f"track_{len(project.tracks)}", name=args.track)
+            project.tracks.append(track)
+        _start, end = track.tick_span()
+        notes = parse_note_entry(
+            args.entry, ppq=project.ppq, default_octave=args.octave,
+            default_duration=args.duration, velocity=args.velocity,
+            articulation=args.articulation, start_tick=end,
+            id_prefix=f"n{len(track.notes)}_",
+        )
+        track.notes.extend(notes)
+        out = Path(args.output) if args.output else Path(args.into)
+        project.save(out)
+        print(f"Added {len(notes)} notes to track {args.track!r} in {out}.")
+        return 0
+
+    project = Project(project_name=args.track, ppq=args.ppq)
+    project.tempo_map.append(TempoEvent(tick=0, bpm=args.tempo))
+    notes = parse_note_entry(
+        args.entry, ppq=args.ppq, default_octave=args.octave,
+        default_duration=args.duration, velocity=args.velocity,
+        articulation=args.articulation,
+    )
+    track = Track(id="track_0", name=args.track, notes=notes)
+    project.tracks.append(track)
+
+    out = Path(args.output) if args.output else Path(f"{args.track}.mid")
+    if out.suffix == ".json":
+        project.save(out)
+    else:
+        write_midi(project, out)
+    span = track.tick_span()[1]
+    print(f"Wrote {out}: {len(notes)} notes, {span} ticks (~{span / args.ppq:g} beats).")
+    return 0
 
 
 def _cmd_inspect_midi(args: argparse.Namespace) -> int:
@@ -369,6 +411,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--profile", help="instrument profile id to attach to tracks")
     p.add_argument("-o", "--output", help="output project JSON path")
     p.set_defaults(func=_cmd_import_midi)
+
+    p = sub.add_parser(
+        "enter-notes",
+        help="build a phrase from Sibelius-style text note input",
+    )
+    p.add_argument("entry", help="e.g. '4 C D E F  2 G | 4 A G F E  1 C'")
+    p.add_argument("--ppq", type=int, default=480)
+    p.add_argument("--tempo", type=float, default=120.0)
+    p.add_argument("--octave", type=int, default=4, help="starting octave (default 4)")
+    p.add_argument("--duration", type=int, default=4, help="initial note value (1/2/4/8/16…)")
+    p.add_argument("--velocity", type=int, default=80)
+    p.add_argument("--articulation", help="tag every note with this articulation id")
+    p.add_argument("--track", default="Lead", help="track name")
+    p.add_argument("--into", help="append to a track in this existing project JSON")
+    p.add_argument("-o", "--output", help="output .mid or .json (default: <track>.mid)")
+    p.set_defaults(func=_cmd_enter_notes)
 
     p = sub.add_parser("validate-profile", help="validate an instrument profile")
     p.add_argument("file")
