@@ -93,6 +93,21 @@ ped enter-notes "4 C D E F  2 G | 4 A G F E  1 C" --track "Lead" -o lead.mid
 で既存トラックの末尾に**追記**もできます（入力を守るため、`-o 別名` か `--in-place` の指定が必要）。
 `--articulation legato` で全音符に奏法タグ付け。
 
+### ライブ・ステップ入力（Sibelius風キー操作）
+
+記譜ソフトと同じキーで1音ずつ入力したいときは `ped step`（ターミナルが鍵盤を握る）：
+
+- **A–G**＝音名、**数字**（1/2/4/8/16/32/64）＝音価、**`.`**＝付点
+- **↑/↓**＝直前の音を半音、**Shift+↑/↓**＝オクターブ移動、**r**＝休符、**Backspace**＝取消、**Enter**＝確定
+
+```bash
+ped step --track Lead -o lead.mid           # ライブ（キー入力）
+ped step --keys "4 C D up E shift-up 2 G"   # スクリプト（テスト・自動化用）
+```
+
+> 注意：この方式は**ターミナル/Standalone 用**です。Logic の中ではホストがキーを優先するため
+> ライブ単キー入力は使えません（DAW内は Logic のミュージックタイピング、または `enter-notes` のテキストを使う）。
+
 ---
 
 ## 3. プロファイルを理解する

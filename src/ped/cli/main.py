@@ -33,6 +33,7 @@ from ..instrument_scan import scan_instruments
 from ..midi.reader import read_midi
 from ..midi.writer import write_midi
 from ..note_entry import parse_note_entry
+from ..note_step import StepEntry, from_tokens
 from ..profile_editor import edit_profile_wizard
 from ..profile_template import build_starter_profile, infer_engine, slugify
 from ..profiles.calibration_assistant import (
@@ -100,6 +101,100 @@ def _cmd_enter_notes(args: argparse.Namespace) -> int:
     _write_project(project, out)
     span = track.tick_span()[1]
     print(f"Wrote {out}: {len(notes)} notes, {span} ticks (~{span / args.ppq:g} beats).")
+    return 0
+
+
+def _live_step(entry: StepEntry) -> None:
+    """Raw-terminal loop: keypresses drive the StepEntry until Enter/Ctrl-C."""
+    import termios
+    import tty
+
+    print(
+        "Step entry — A-G note, 1/2/4/8/16/32/64 value, '.' dot, ↑/↓ ±semitone, "
+        "Shift+↑/↓ ±octave, r rest, Backspace undo, Enter to finish."
+    )
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    digit_buf = ""
+
+    def flush_digits() -> None:
+        nonlocal digit_buf
+        if digit_buf:
+            try:
+                entry.set_duration(int(digit_buf))
+            except ValueError:
+                pass
+            digit_buf = ""
+
+    arrows = {"[A": "up", "[B": "down", "[1;2A": "shift-up", "[1;2B": "shift-down"}
+    try:
+        tty.setraw(fd)
+        while True:
+            ch = sys.stdin.read(1)
+            if ch in ("\r", "\n", "\x03", "\x04"):  # Enter / Ctrl-C / Ctrl-D
+                break
+            try:
+                if ch == "\x1b":  # escape sequence (arrows)
+                    seq = ""
+                    while True:
+                        c = sys.stdin.read(1)
+                        seq += c
+                        if c.isalpha() or c == "~":
+                            break
+                    if seq in arrows:
+                        flush_digits()
+                        entry.key(arrows[seq])
+                elif ch.isdigit():
+                    digit_buf += ch
+                elif ch == ".":
+                    flush_digits()
+                    entry.add_dot()
+                elif ch in ("\x7f", "\b"):
+                    flush_digits()
+                    entry.backspace()
+                elif ch.upper() in "ABCDEFG":
+                    flush_digits()
+                    entry.note(ch)
+                elif ch in ("r", "R"):
+                    flush_digits()
+                    entry.rest()
+            except ValueError:
+                pass  # ignore an out-of-range note etc.; keep entering
+            sys.stdout.write(f"\r notes={len(entry.notes)} value=1/{entry.cur_value}   ")
+            sys.stdout.flush()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        print()
+
+
+def _cmd_step(args: argparse.Namespace) -> int:
+    if args.keys is not None:
+        notes = from_tokens(
+            args.keys, ppq=args.ppq, default_octave=args.octave,
+            default_duration=args.duration, velocity=args.velocity, articulation=args.articulation,
+        )
+    else:
+        if not sys.stdin.isatty():
+            print("error: live step entry needs a terminal; use --keys for scripted input",
+                  file=sys.stderr)
+            return 2
+        entry = StepEntry(
+            ppq=args.ppq, default_octave=args.octave, default_duration=args.duration,
+            velocity=args.velocity, articulation=args.articulation,
+        )
+        _live_step(entry)
+        notes = entry.notes
+
+    if not notes:
+        print("No notes entered.")
+        return 0
+    project = Project(project_name=args.track, ppq=args.ppq)
+    project.tempo_map.append(TempoEvent(tick=0, bpm=args.tempo))
+    project.tracks.append(Track(id="track_0", name=args.track, notes=notes))
+    out = Path(args.output) if args.output else Path(f"{args.track}.mid")
+    _write_project(project, out)
+    span = project.tracks[0].tick_span()[1]
+    print(f"Wrote {out}: {len(notes)} notes, {span} ticks.")
     return 0
 
 
@@ -447,6 +542,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("-o", "--output", help="output .mid or .json (default: <track>.mid)")
     p.set_defaults(func=_cmd_enter_notes)
+
+    p = sub.add_parser(
+        "step",
+        help="Sibelius-style live keyboard step entry (A-G, number=value, arrows, Shift+arrows)",
+    )
+    p.add_argument(
+        "--keys",
+        help="scripted token sequence instead of live keys, e.g. '4 C D up E shift-up r 2 G'",
+    )
+    p.add_argument("--ppq", type=int, default=480)
+    p.add_argument("--tempo", type=float, default=120.0)
+    p.add_argument("--octave", type=int, default=4)
+    p.add_argument("--duration", type=int, default=4)
+    p.add_argument("--velocity", type=int, default=80)
+    p.add_argument("--articulation", help="tag every note with this articulation id")
+    p.add_argument("--track", default="Lead")
+    p.add_argument("-o", "--output", help="output .mid or .json (default: <track>.mid)")
+    p.set_defaults(func=_cmd_step)
 
     p = sub.add_parser("validate-profile", help="validate an instrument profile")
     p.add_argument("file")
