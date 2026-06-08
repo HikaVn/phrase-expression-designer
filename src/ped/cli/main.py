@@ -31,6 +31,7 @@ from ..exporters.logic import export_logic_articulation_set
 from ..instrument_scan import scan_instruments
 from ..midi.reader import read_midi
 from ..midi.writer import write_midi
+from ..profile_editor import edit_profile_wizard
 from ..profile_template import build_starter_profile, infer_engine, slugify
 from ..profiles.calibration_assistant import (
     build_from_dynamics,
@@ -134,6 +135,24 @@ def _cmd_new_profile(args: argparse.Namespace) -> int:
         f"  Next: edit library/patch, the keyswitch notes, and calibrate "
         f"(`ped calibrate --id dyn_default --levels ... --profile {out}`)."
     )
+    return 0
+
+
+def _cmd_edit_profile(args: argparse.Namespace) -> int:
+    profile = InstrumentProfile.load(args.file)
+    saved = edit_profile_wizard(profile)
+    if not saved:
+        print("No changes saved.")
+        return 0
+    report = validate_profile(profile)
+    for issue in report.issues:
+        print(issue)
+    if not report.ok:
+        print(f"FAILED: {len(report.errors)} error(s) — not writing. Fix and try again.")
+        return 1
+    out = Path(args.output) if args.output else Path(args.file)
+    profile.save(out)
+    print(f"Wrote {out} ({len(report.warnings)} warning(s)).")
     return 0
 
 
@@ -382,6 +401,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="pick an installed instrument and fill fields by prompts",
     )
     p.set_defaults(func=_cmd_new_profile)
+
+    p = sub.add_parser("edit-profile", help="interactively edit an existing profile")
+    p.add_argument("file", help="profile JSON to edit")
+    p.add_argument("-o", "--output", help="write here instead of in place")
+    p.set_defaults(func=_cmd_edit_profile)
 
     p = sub.add_parser("validate-project", help="validate a project JSON (structure + refs)")
     p.add_argument("project")
