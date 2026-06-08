@@ -63,6 +63,7 @@ ped calibrate --id dyn --levels "ppp=8,p=35,mf=68,ff=110,fff=120" \
 | --- | --- |
 | `inspect-midi` | Summarize a MIDI file |
 | `import-midi` | MIDI → project JSON |
+| `enter-notes` | Build a phrase from Sibelius-style text note input → MIDI/JSON |
 | `validate-profile` | Check an instrument profile |
 | `validate-project` | Check a project (structure + refs, optional profile cross-check) |
 | `list-instruments` | List installed instrument plugins (AU via `auval`, VST3 by folder) |
