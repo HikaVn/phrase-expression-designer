@@ -5,7 +5,8 @@
 
 #include "PluginProcessor.h"
 
-class PedAudioProcessorEditor : public juce::AudioProcessorEditor
+class PedAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                public juce::FileDragAndDropTarget
 {
 public:
     explicit PedAudioProcessorEditor (PedAudioProcessor&);
@@ -13,6 +14,10 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    // Drag a profile .json onto the window to load it.
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void filesDropped (const juce::StringArray& files, int x, int y) override;
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;

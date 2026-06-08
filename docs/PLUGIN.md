@@ -54,6 +54,9 @@ verifiable. Only `Profile.*` and the plugin classes pull in JUCE.
   controllers — passes through unchanged.
 - An `Articulation` index parameter taps the selected articulation's trigger
   (keyswitch note / CC / program change).
+- Load a profile via **Load Profile…** (the file dialog allows all files — some
+  hosts grey out a `.json`-only filter — and validates JSON on load) or by
+  **dragging a `.json` onto the plugin window**; **Reload** re-reads the current file.
 
 This mirrors the offline `export-midi` path, so a profile behaves the same
 whether you render CC offline in Python or play it live in the DAW.

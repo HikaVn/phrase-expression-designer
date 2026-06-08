@@ -60,8 +60,10 @@ void PedAudioProcessorEditor::refreshProfileLabel()
 
 void PedAudioProcessorEditor::openProfile()
 {
+    // Allow all files (some hosts grey out a ".json"-only filter); we validate
+    // the JSON on load anyway.
     chooser = std::make_unique<juce::FileChooser> ("Select an Instrument Profile JSON",
-                                                   juce::File(), "*.json");
+                                                   juce::File(), "*");
     auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
     chooser->launchAsync (flags, [this] (const juce::FileChooser& fc)
     {
@@ -71,6 +73,27 @@ void PedAudioProcessorEditor::openProfile()
     });
 }
 
+bool PedAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    for (const auto& f : files)
+        if (f.endsWithIgnoreCase (".json"))
+            return true;
+    return false;
+}
+
+void PedAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, int)
+{
+    for (const auto& f : files)
+    {
+        juce::File file (f);
+        if (file.existsAsFile() && processorRef.loadProfile (file))
+        {
+            refreshProfileLabel();
+            break;
+        }
+    }
+}
+
 void PedAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
@@ -78,6 +101,10 @@ void PedAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (18.0f);
     g.drawText ("Phrase Expression Designer", getLocalBounds().removeFromTop (32),
                 juce::Justification::centred);
+    g.setColour (juce::Colours::grey);
+    g.setFont (11.0f);
+    g.drawText ("Load a profile, or drop a .json here",
+                getLocalBounds().removeFromBottom (16), juce::Justification::centred);
 }
 
 void PedAudioProcessorEditor::resized()
