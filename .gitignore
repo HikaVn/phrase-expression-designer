@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+__pycache__/
+
+# Leftover build/cache dirs from the pre-web backup branch
+plugin/
+examples/
+src/ped/
+src/ped_web/
+*.egg-info/

@@ -8,6 +8,7 @@ import {
   applyDynamic,
   applyNoteLetter,
   applyPhraseTemplate,
+  dynamicCommandFromText,
   applySelectedNoteDuration,
   cloneProject,
   computePerformanceNotes,
@@ -147,10 +148,37 @@ function bindElements() {
     "wizardInstructionsText",
     "wizardValidationList",
     "wizardRefreshButton",
-    "wizardApplyButton"
+    "wizardApplyButton",
+    "dynamicPopover",
+    "dynamicInput"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
+}
+
+function openDynamicPopover() {
+  els.dynamicPopover.hidden = false;
+  els.dynamicInput.value = "";
+  els.dynamicInput.focus();
+}
+
+function closeDynamicPopover() {
+  els.dynamicPopover.hidden = true;
+  els.dynamicInput.blur();
+}
+
+function commitDynamicPopover() {
+  const command = dynamicCommandFromText(els.dynamicInput.value);
+  if (!command) {
+    els.statusText.textContent = `強弱として解釈できません: ${els.dynamicInput.value}`;
+    return;
+  }
+  closeDynamicPopover();
+  if (command.type === "dynamic") {
+    mutate(`Dynamic ${command.mark}`, () => applyDynamic(project, command.mark));
+  } else {
+    mutate(`Add ${command.direction}`, () => addCrescendo(project, command.direction));
+  }
 }
 
 function populateProfiles() {
@@ -241,6 +269,18 @@ function bindEvents() {
       const mark = button.dataset.dynamic;
       mutate(`Dynamic ${mark}`, () => applyDynamic(project, mark));
     });
+  });
+  els.dynamicInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitDynamicPopover();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeDynamicPopover();
+    }
+  });
+  els.dynamicInput.addEventListener("blur", () => {
+    if (!els.dynamicPopover.hidden) closeDynamicPopover();
   });
   document.addEventListener("keydown", onKeyDown);
 }
@@ -476,6 +516,11 @@ function onKeyDown(event) {
   if ((cmd && key.toLowerCase() === "z" && event.shiftKey) || (cmd && key.toLowerCase() === "y")) {
     event.preventDefault();
     redo();
+    return;
+  }
+  if (cmd && key.toLowerCase() === "e") {
+    event.preventDefault();
+    openDynamicPopover();
     return;
   }
   if (cmd && key.toLowerCase() === "b") {

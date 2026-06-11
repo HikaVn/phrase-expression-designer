@@ -38,6 +38,8 @@ npm test
 - Dynamic marks (ppp–fff): one click sets the intensity level from that point
   (subito step), shapes note velocities to match, and engraves the mark
   (e.g. *mf*) in the notation view
+- Sibelius-style dynamics entry: Cmd/Ctrl+E opens a popover — type `p`, `mf`,
+  `ff`, `<` (cresc.) or `>` (dim.) and press Enter
 - Hairpins start from the level actually sounding, aim at the next written
   dynamic (or move two steps), and merge into the existing intensity curve
   instead of replacing it

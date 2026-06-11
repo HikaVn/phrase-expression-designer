@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ped-browser",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4280", "--bind", "127.0.0.1"],
+      "port": 4280
+    }
+  ]
+}

@@ -458,6 +458,21 @@ function setCurvePointAt(curve, tick, value) {
   curve.points.sort((a, b) => a.tick - b.tick);
 }
 
+// Parse the dynamics-popover text (Sibelius-style Cmd+E entry) into a command.
+export function dynamicCommandFromText(text) {
+  const token = String(text ?? "").trim().toLowerCase();
+  if (token === "") return null;
+  if (token === "<" || token === "cresc" || token === "cresc." || token === "crescendo") {
+    return { type: "hairpin", direction: "crescendo" };
+  }
+  if (token === ">" || token === "dim" || token === "dim." || token === "decresc"
+      || token === "decresc." || token === "decrescendo" || token === "diminuendo") {
+    return { type: "hairpin", direction: "decrescendo" };
+  }
+  if (DYNAMIC_MARKS.includes(token)) return { type: "dynamic", mark: token };
+  return null;
+}
+
 export function applyDynamic(project, mark) {
   const value = dynamicValue(mark);
   if (value === null) return false;

@@ -13,6 +13,7 @@ import {
   createInitialProject,
   deleteCurvePoint,
   deleteSelection,
+  dynamicCommandFromText,
   dynamicValue,
   exportMidi,
   generateCcEvents,
@@ -385,4 +386,15 @@ test("MIDI import starts with no dynamic marks", () => {
   const bytes = exportMidi(source);
   const project = importMidi(bytes.buffer ?? bytes);
   assert.deepEqual(project.dynamics, []);
+});
+
+test("dynamicCommandFromText parses marks and hairpins, rejects noise", () => {
+  assert.deepEqual(dynamicCommandFromText("mf"), { type: "dynamic", mark: "mf" });
+  assert.deepEqual(dynamicCommandFromText("  FF "), { type: "dynamic", mark: "ff" });
+  assert.deepEqual(dynamicCommandFromText("<"), { type: "hairpin", direction: "crescendo" });
+  assert.deepEqual(dynamicCommandFromText("cresc."), { type: "hairpin", direction: "crescendo" });
+  assert.deepEqual(dynamicCommandFromText(">"), { type: "hairpin", direction: "decrescendo" });
+  assert.deepEqual(dynamicCommandFromText("dim"), { type: "hairpin", direction: "decrescendo" });
+  assert.equal(dynamicCommandFromText("fortissimo"), null);
+  assert.equal(dynamicCommandFromText(""), null);
 });
