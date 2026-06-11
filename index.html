@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Phrase Expression Designer</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div>
+          <h1>Phrase Expression Designer</h1>
+          <p id="statusText">Logic向けMIDI表情設計ツール</p>
+        </div>
+        <div class="top-actions">
+          <label class="file-button">
+            <input id="projectImportInput" type="file" accept=".json,application/json">
+            Project読込
+          </label>
+          <button id="exportProjectButton" type="button">Project保存</button>
+          <label class="file-button">
+            <input id="midiImportInput" type="file" accept=".mid,.midi,audio/midi">
+            MIDI読込
+          </label>
+          <button id="exportMidiButton" type="button">MIDI書出</button>
+          <button id="testMidiButton" type="button">テストMIDI</button>
+          <button id="exportProfileButton" type="button">Profile保存</button>
+          <button id="exportReportButton" type="button">Report保存</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="toolbar" aria-label="入力ツール">
+          <div class="tool-group">
+            <button class="mode-button active" id="selectModeButton" type="button" title="選択モード">選択</button>
+            <button class="mode-button" id="notationModeButton" type="button" title="記譜モード">記譜</button>
+            <button class="mode-button" id="performanceModeButton" type="button" title="パフォーマンス編集モード">性能</button>
+          </div>
+          <div class="tool-group">
+            <label>音価</label>
+            <select id="durationSelect">
+              <option value="240">16分</option>
+              <option value="360">付点16分</option>
+              <option value="480">8分</option>
+              <option value="720">付点8分</option>
+              <option value="960" selected>4分</option>
+              <option value="1440">付点4分</option>
+              <option value="1920">2分</option>
+              <option value="2880">付点2分</option>
+              <option value="3840">全音</option>
+              <option value="5760">付点全音</option>
+            </select>
+            <button id="restButton" type="button">休符</button>
+            <button id="tieButton" type="button">タイ</button>
+          </div>
+          <div class="tool-group">
+            <label>奏法</label>
+            <button data-articulation="sustain" type="button">Sustain</button>
+            <button data-articulation="legato" type="button">Legato</button>
+            <button data-articulation="staccato" type="button">Staccato</button>
+            <button data-articulation="accent" type="button">Accent</button>
+            <button data-articulation="marcato" type="button">Marcato</button>
+          </div>
+          <div class="tool-group">
+            <label>記号</label>
+            <button id="slurButton" type="button">Slur</button>
+            <button id="crescendoButton" type="button">Cresc.</button>
+            <button id="decrescendoButton" type="button">Decresc.</button>
+          </div>
+        </aside>
+
+        <section class="editor">
+          <section class="transport-panel">
+            <div>
+              <span>BPM</span>
+              <input id="bpmInput" type="number" min="20" max="300" value="120">
+            </div>
+            <div>
+              <span>PPQ</span>
+              <input id="ppqInput" type="number" min="120" max="3840" value="960">
+            </div>
+            <div>
+              <span>入力位置</span>
+              <output id="cursorOutput">1.1.000</output>
+            </div>
+            <div>
+              <span>選択</span>
+              <output id="selectionOutput">0</output>
+            </div>
+            <div>
+              <span>Auto Save</span>
+              <output id="autosaveOutput">待機中</output>
+            </div>
+          </section>
+
+          <section class="view-panel">
+            <div class="panel-heading">
+              <h2>Notation</h2>
+            </div>
+            <svg id="notationSvg" class="notation-view" role="img" aria-label="楽譜風ノート表示"></svg>
+          </section>
+
+          <section class="view-panel">
+            <div class="panel-heading">
+              <h2>Piano Roll</h2>
+            </div>
+            <svg id="pianoRollSvg" class="piano-roll-view" role="img" aria-label="ピアノロール表示"></svg>
+          </section>
+
+          <section class="view-panel">
+            <div class="panel-heading">
+              <h2>Expression Curves</h2>
+              <select id="curveParameterSelect">
+                <option value="intensity">intensity</option>
+                <option value="volume">volume</option>
+                <option value="timbre">timbre</option>
+                <option value="vibratoDepth">vibratoDepth</option>
+                <option value="phraseFlow">phraseFlow</option>
+              </select>
+            </div>
+            <svg id="curveSvg" class="curve-view" role="img" aria-label="表情カーブ表示"></svg>
+            <div class="template-row" id="templateButtons"></div>
+          </section>
+
+          <section class="view-panel">
+            <div class="panel-heading">
+              <h2>MIDI Event Preview</h2>
+              <span id="eventListSummary">0 events</span>
+            </div>
+            <div class="event-table-wrap">
+              <table class="event-table">
+                <thead>
+                  <tr>
+                    <th>Position</th>
+                    <th>Tick</th>
+                    <th>Type</th>
+                    <th>Detail</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody id="eventListBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <aside class="inspector">
+          <section class="inspector-block">
+            <h2>Instrument Profile</h2>
+            <select id="profileSelect"></select>
+            <label class="file-button">
+              <input id="profileImportInput" type="file" accept=".json,application/json">
+              Profile読込
+            </label>
+            <button id="wizardButton" type="button">Setup Wizard</button>
+          </section>
+
+          <section class="inspector-block">
+            <h2>Batch Properties</h2>
+            <p id="batchSummary">変更対象:0件</p>
+            <div class="property-row">
+              <input id="applyPitch" type="checkbox">
+              <label for="applyPitch">Pitch</label>
+              <input id="pitchInput" type="number" min="0" max="127">
+            </div>
+            <div class="property-row">
+              <input id="applyArticulation" type="checkbox">
+              <label for="applyArticulation">Articulation</label>
+              <select id="articulationInput"></select>
+            </div>
+            <div class="property-row">
+              <input id="applyOffset" type="checkbox">
+              <label for="applyOffset">Local Offset ms</label>
+              <input id="offsetInput" type="number" step="1">
+            </div>
+            <div class="property-row">
+              <input id="applyVelocity" type="checkbox">
+              <label for="applyVelocity">Velocity</label>
+              <input id="velocityInput" type="number" min="1" max="127">
+            </div>
+            <button id="applyBatchButton" type="button">チェック項目を適用</button>
+            <div class="timing-actions">
+              <button id="resetOffsetButton" type="button">Reset Offset</button>
+              <button id="freezeTimingButton" type="button">Freeze Timing</button>
+              <button id="quantizeTimingButton" type="button">Quantize</button>
+            </div>
+          </section>
+
+          <section class="inspector-block">
+            <h2>Validation</h2>
+            <ul id="validationList" class="validation-list"></ul>
+          </section>
+
+          <section class="inspector-block">
+            <h2>Setup Report</h2>
+            <textarea id="reportText" readonly></textarea>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <dialog id="wizardDialog" class="wizard-dialog">
+      <form method="dialog" class="wizard-form">
+        <header class="wizard-header">
+          <h2>Instrument Setup Wizard</h2>
+          <button id="wizardCloseButton" value="cancel" type="submit">閉じる</button>
+        </header>
+        <div class="wizard-grid">
+          <section class="wizard-section">
+            <h3>Source</h3>
+            <label>Base Profile<select id="wizardBaseSelect"></select></label>
+            <label>Engine<input id="wizardEngineInput" type="text"></label>
+            <label>Library<input id="wizardLibraryInput" type="text"></label>
+            <label>Patch<input id="wizardPatchInput" type="text"></label>
+            <label>Note Naming<select id="wizardNoteNamingSelect">
+              <option value="C3=60">C3=60</option>
+              <option value="C4=60">C4=60</option>
+              <option value="Kontakt">Kontakt</option>
+              <option value="Logic">Logic</option>
+            </select></label>
+          </section>
+          <section class="wizard-section">
+            <h3>Ranges / Timing</h3>
+            <div class="range-row">
+              <label>Playable Low<input id="wizardPlayableLowInput" type="number" min="0" max="127"></label>
+              <label>Playable High<input id="wizardPlayableHighInput" type="number" min="0" max="127"></label>
+            </div>
+            <div class="range-row">
+              <label>KS Low<input id="wizardKeyswitchLowInput" type="number" min="0" max="127"></label>
+              <label>KS High<input id="wizardKeyswitchHighInput" type="number" min="0" max="127"></label>
+            </div>
+            <div class="range-row">
+              <label>CC LookAhead<input id="wizardCcLookAheadInput" type="number"></label>
+              <label>PC LookAhead<input id="wizardPcLookAheadInput" type="number"></label>
+            </div>
+          </section>
+          <section class="wizard-section wide">
+            <h3>Articulations</h3>
+            <textarea id="wizardArticulationsText"></textarea>
+          </section>
+          <section class="wizard-section wide">
+            <h3>Controls</h3>
+            <textarea id="wizardControlsText"></textarea>
+          </section>
+          <section class="wizard-section wide">
+            <h3>Setup Instructions</h3>
+            <textarea id="wizardInstructionsText"></textarea>
+          </section>
+          <section class="wizard-section wide">
+            <h3>Validation Preview</h3>
+            <ul id="wizardValidationList" class="validation-list"></ul>
+          </section>
+        </div>
+        <footer class="wizard-footer">
+          <button id="wizardRefreshButton" type="button">Validation更新</button>
+          <button id="wizardApplyButton" value="default" type="button">Profile反映</button>
+        </footer>
+      </form>
+    </dialog>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
