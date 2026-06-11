@@ -5,6 +5,7 @@ import {
   addRest,
   addSlur,
   applyBatchProperties,
+  applyDynamic,
   applyNoteLetter,
   applyPhraseTemplate,
   applySelectedNoteDuration,
@@ -233,6 +234,12 @@ function bindEvents() {
           note.articulation = articulation;
         });
       });
+    });
+  });
+  document.querySelectorAll("[data-dynamic]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const mark = button.dataset.dynamic;
+      mutate(`Dynamic ${mark}`, () => applyDynamic(project, mark));
     });
   });
   document.addEventListener("keydown", onKeyDown);
@@ -512,6 +519,11 @@ function onKeyDown(event) {
   if (/^[a-g]$/i.test(key) && !cmd) {
     event.preventDefault();
     mutate(`Input ${key.toUpperCase()}`, () => applyNoteLetter(project, key.toUpperCase()));
+    return;
+  }
+  if (key.toLowerCase() === "r" && !cmd) {
+    event.preventDefault();
+    mutate("Add rest", () => addRest(project, currentDurationTicks()));
     return;
   }
   if (key === "ArrowUp") {
@@ -890,6 +902,11 @@ function renderNotation(profile) {
       svg.append(lineEl(x1, y - 10, x2, y, "hairpin"));
       svg.append(lineEl(x1, y + 10, x2, y, "hairpin"));
     }
+  });
+
+  (project.dynamics ?? []).forEach((dyn) => {
+    const x = left + dyn.tick * xScale;
+    svg.append(textEl(x - 6, top + 96, dyn.mark, "dynamic-mark"));
   });
 
   project.notes.forEach((note) => {

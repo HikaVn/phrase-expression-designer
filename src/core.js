@@ -176,6 +176,7 @@ export function createInitialProject() {
     rests: [],
     slurs: [],
     crescendos: [],
+    dynamics: [],
     expressionCurves: {
       intensity: { parameter: "intensity", points: [{ tick: 0, value: 0.35 }, { tick: 1920, value: 0.8 }, { tick: 3840, value: 0.55 }] },
       volume: { parameter: "volume", points: [{ tick: 0, value: 0.45 }, { tick: 3840, value: 0.62 }] },
@@ -430,12 +431,83 @@ export function addSlur(project) {
   return true;
 }
 
+// Dynamic marks, soft to loud. Mark i sits at i / (count - 1) on the
+// normalized intensity scale, so hairpins can move in whole "steps".
+export const DYNAMIC_MARKS = ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"];
+const DYNAMIC_STEP = 1 / (DYNAMIC_MARKS.length - 1);
+
+export function dynamicValue(mark) {
+  const index = DYNAMIC_MARKS.indexOf(mark);
+  return index === -1 ? null : index * DYNAMIC_STEP;
+}
+
+export function velocityForDynamic(value) {
+  return clamp(Math.round(30 + 90 * value), 1, 127);
+}
+
+function intensityCurve(project) {
+  if (!project.expressionCurves.intensity) {
+    project.expressionCurves.intensity = { parameter: "intensity", points: [] };
+  }
+  return project.expressionCurves.intensity;
+}
+
+function setCurvePointAt(curve, tick, value) {
+  curve.points = curve.points.filter((point) => point.tick !== tick);
+  curve.points.push({ tick, value });
+  curve.points.sort((a, b) => a.tick - b.tick);
+}
+
+export function applyDynamic(project, mark) {
+  const value = dynamicValue(mark);
+  if (value === null) return false;
+  const notes = selectedNotes(project).sort((a, b) => a.scoreTick - b.scoreTick);
+  const tick = notes.length > 0 ? notes[0].scoreTick : project.cursorTick;
+  const curve = intensityCurve(project);
+  // Subito: hold the previous level right up to the mark, then step.
+  const previous = sampleCurve(project, "intensity", tick);
+  if (tick > 0 && curve.points.some((point) => point.tick < tick)) {
+    setCurvePointAt(curve, tick - 1, previous);
+  }
+  setCurvePointAt(curve, tick, value);
+  // Record the mark itself so the notation view can engrave it.
+  project.dynamics = (project.dynamics ?? []).filter((d) => d.tick !== tick);
+  project.dynamics.push({ id: cryptoRandomId("dynamic"), tick, mark });
+  project.dynamics.sort((a, b) => a.tick - b.tick);
+  // Velocities follow the (updated) curve: the selection if there is one,
+  // otherwise every note from the mark onward.
+  const targets = notes.length > 0 ? notes : project.notes.filter((n) => n.scoreTick >= tick);
+  targets.forEach((note) => {
+    note.velocity = velocityForDynamic(sampleCurve(project, "intensity", note.scoreTick));
+  });
+  return true;
+}
+
 export function addCrescendo(project, direction = "crescendo") {
   const notes = selectedNotes(project).sort((a, b) => a.scoreTick - b.scoreTick);
   if (notes.length === 0) return false;
   const start = notes[0];
   const end = notes.length === 1 ? nextNote(project, start) : notes[notes.length - 1];
   if (!end) return false;
+  const startTick = start.scoreTick;
+  const endTick = end.scoreTick + end.durationTicks;
+
+  const curve = intensityCurve(project);
+  // Start from the level that is actually sounding at the hairpin, and aim at
+  // the level already written after it (a following dynamic mark), falling
+  // back to two dynamic steps in the hairpin's direction.
+  const startValue = sampleCurve(project, "intensity", startTick);
+  const later = [...curve.points].sort((a, b) => a.tick - b.tick).find((p) => p.tick > endTick);
+  let endValue = later ? later.value : startValue + (direction === "crescendo" ? 2 : -2) * DYNAMIC_STEP;
+  if (direction === "crescendo" && endValue <= startValue) endValue = startValue + 2 * DYNAMIC_STEP;
+  if (direction === "decrescendo" && endValue >= startValue) endValue = startValue - 2 * DYNAMIC_STEP;
+  endValue = clamp(endValue, 0, 1);
+
+  // Merge: only the hairpin's own span is rewritten; the rest of the curve stays.
+  curve.points = curve.points.filter((point) => point.tick < startTick || point.tick > endTick);
+  curve.points.push({ tick: startTick, value: startValue }, { tick: endTick, value: endValue });
+  curve.points.sort((a, b) => a.tick - b.tick);
+
   project.crescendos.push({
     id: cryptoRandomId("crescendo"),
     startNoteId: start.id,
@@ -443,19 +515,19 @@ export function addCrescendo(project, direction = "crescendo") {
     direction,
     curveType: "S-Curve",
     curveOrder: 2,
-    startIntensity: direction === "crescendo" ? 0.35 : 0.85,
-    endIntensity: direction === "crescendo" ? 0.85 : 0.3,
+    startIntensity: startValue,
+    endIntensity: endValue,
     timbreFollowsDynamics: true,
     expressionFollowsDynamics: true,
     vibratoAmount: 0.35
   });
-  project.expressionCurves.intensity = {
-    parameter: "intensity",
-    points: [
-      { tick: start.scoreTick, value: direction === "crescendo" ? 0.35 : 0.85 },
-      { tick: end.scoreTick + end.durationTicks, value: direction === "crescendo" ? 0.85 : 0.3 }
-    ]
-  };
+
+  // Notes under the hairpin follow it.
+  project.notes
+    .filter((note) => note.scoreTick >= startTick && note.scoreTick <= endTick)
+    .forEach((note) => {
+      note.velocity = velocityForDynamic(sampleCurve(project, "intensity", note.scoreTick));
+    });
   return true;
 }
 
@@ -837,6 +909,7 @@ export function importMidi(arrayBuffer) {
   project.rests = [];
   project.slurs = [];
   project.crescendos = [];
+  project.dynamics = [];
   project.selectedIds = [];
   project.tempoMap = [];
   const importedCc = [];

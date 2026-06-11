@@ -33,8 +33,14 @@ npm test
 
 ## Implemented MVP Features
 
-- Notation-style note display and A-G keyboard input
+- Notation-style note display and A-G keyboard input (`r` inserts a rest)
 - Rest insertion, tie flag, slur creation, crescendo/decrescendo creation
+- Dynamic marks (ppp–fff): one click sets the intensity level from that point
+  (subito step), shapes note velocities to match, and engraves the mark
+  (e.g. *mf*) in the notation view
+- Hairpins start from the level actually sounding, aim at the next written
+  dynamic (or move two steps), and merge into the existing intensity curve
+  instead of replacing it
 - Piano roll showing score timing and actual performance timing
 - Piano roll drag editing for frozen performance timing
 - MIDI CC event visualization in the piano roll

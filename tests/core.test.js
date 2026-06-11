@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   BUILT_IN_PROFILES,
   addCrescendo,
+  applyDynamic,
   addSlur,
   applyBatchProperties,
   applyNoteLetter,
@@ -12,6 +13,7 @@ import {
   createInitialProject,
   deleteCurvePoint,
   deleteSelection,
+  dynamicValue,
   exportMidi,
   generateCcEvents,
   generateMidiEventList,
@@ -29,7 +31,8 @@ import {
   toggleTie,
   tickToMs,
   upsertCurvePoint,
-  validateProfile
+  validateProfile,
+  velocityForDynamic
 } from "../src/core.js";
 
 test("tickToMs converts constant tempo ticks to milliseconds", () => {
@@ -71,10 +74,15 @@ test("slur and crescendo are created from selected note ranges", () => {
   assert.equal(addCrescendo(project, "crescendo"), true);
   assert.equal(project.slurs.length, 1);
   assert.equal(project.crescendos.length, 1);
-  assert.deepEqual(project.expressionCurves.intensity.points, [
-    { tick: project.notes[0].scoreTick, value: 0.35 },
-    { tick: project.notes[2].scoreTick + project.notes[2].durationTicks, value: 0.85 }
-  ]);
+  // The hairpin rewrites only its own span: it starts at the level that was
+  // sounding at the first note and ends higher at the last note's end.
+  const hairpin = project.crescendos[0];
+  const startTick = project.notes[0].scoreTick;
+  const endTick = project.notes[2].scoreTick + project.notes[2].durationTicks;
+  assert.equal(hairpin.startIntensity, 0.35); // the initial curve's value at tick 0
+  assert.ok(hairpin.endIntensity > hairpin.startIntensity);
+  assert.ok(Math.abs(sampleCurve(project, "intensity", startTick) - hairpin.startIntensity) < 1e-9);
+  assert.ok(Math.abs(sampleCurve(project, "intensity", endTick) - hairpin.endIntensity) < 1e-9);
 });
 
 test("batch apply changes only checked properties", () => {
@@ -272,4 +280,109 @@ test("tie is rejected when the next note has a different pitch", () => {
   project.selectedIds = [project.notes[0].id];
   toggleTie(project);
   assert.equal(project.notes[0].tiedToNext, false);
+});
+
+test("applyDynamic places a curve step at the selected note and shapes velocity", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = { parameter: "intensity", points: [] };
+  project.selectedIds = [project.notes[0].id];
+  assert.equal(applyDynamic(project, "mf"), true);
+  assert.equal(sampleCurve(project, "intensity", 0), dynamicValue("mf"));
+  assert.equal(project.notes[0].velocity, velocityForDynamic(dynamicValue("mf")));
+});
+
+test("applyDynamic mid-phrase is subito: previous level holds until the mark", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = { parameter: "intensity", points: [] };
+  project.selectedIds = [project.notes[0].id];
+  applyDynamic(project, "p");
+  project.selectedIds = [project.notes[2].id]; // scoreTick 1920
+  applyDynamic(project, "ff");
+  assert.equal(sampleCurve(project, "intensity", 1919), dynamicValue("p"));
+  assert.equal(sampleCurve(project, "intensity", 1920), dynamicValue("ff"));
+});
+
+test("applyDynamic without a selection applies from the cursor onward", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = { parameter: "intensity", points: [] };
+  project.selectedIds = [];
+  project.cursorTick = 1920;
+  applyDynamic(project, "fff");
+  assert.equal(project.notes[0].velocity, 72); // before the mark: untouched
+  assert.equal(project.notes[2].velocity, velocityForDynamic(1));
+  assert.equal(project.notes[3].velocity, velocityForDynamic(1));
+});
+
+test("addCrescendo keeps curve points outside the hairpin span", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = {
+    parameter: "intensity",
+    points: [{ tick: 0, value: 0.2 }, { tick: 5000, value: 0.9 }]
+  };
+  project.selectedIds = [project.notes[1].id, project.notes[2].id]; // 960..2880
+  assert.equal(addCrescendo(project, "crescendo"), true);
+  const ticks = project.expressionCurves.intensity.points.map((p) => p.tick);
+  assert.ok(ticks.includes(0), "point before the hairpin survives");
+  assert.ok(ticks.includes(5000), "point after the hairpin survives");
+});
+
+test("addCrescendo starts from the sounding level and aims at the next written level", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = {
+    parameter: "intensity",
+    points: [
+      { tick: 0, value: dynamicValue("p") },
+      { tick: 960, value: dynamicValue("p") },   // p holds up to the hairpin
+      { tick: 5000, value: dynamicValue("f") }   // a later written f
+    ]
+  };
+  project.selectedIds = [project.notes[1].id, project.notes[2].id];
+  addCrescendo(project, "crescendo");
+  const hairpin = project.crescendos.at(-1);
+  assert.ok(Math.abs(hairpin.startIntensity - dynamicValue("p")) < 1e-9);
+  assert.ok(Math.abs(hairpin.endIntensity - dynamicValue("f")) < 1e-9);
+});
+
+test("addCrescendo without a later mark moves two dynamic steps and respects direction", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = {
+    parameter: "intensity",
+    points: [{ tick: 0, value: dynamicValue("mf") }]
+  };
+  project.selectedIds = [project.notes[1].id, project.notes[2].id];
+  addCrescendo(project, "decrescendo");
+  const hairpin = project.crescendos.at(-1);
+  assert.ok(hairpin.endIntensity < hairpin.startIntensity, "decrescendo must fall");
+  assert.ok(Math.abs((hairpin.startIntensity - hairpin.endIntensity) - 2 / 7) < 1e-9);
+});
+
+test("notes under a crescendo get rising velocities", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = {
+    parameter: "intensity",
+    points: [{ tick: 0, value: dynamicValue("p") }]
+  };
+  project.selectedIds = project.notes.map((n) => n.id);
+  addCrescendo(project, "crescendo");
+  const velocities = project.notes.map((n) => n.velocity);
+  const sorted = [...velocities].sort((a, b) => a - b);
+  assert.deepEqual(velocities, sorted);
+  assert.ok(velocities.at(-1) > velocities[0]);
+});
+
+test("applyDynamic records the mark for notation and replaces a same-tick mark", () => {
+  const project = createInitialProject();
+  project.selectedIds = [project.notes[0].id];
+  applyDynamic(project, "p");
+  applyDynamic(project, "mf"); // change your mind at the same spot
+  assert.equal(project.dynamics.length, 1);
+  assert.equal(project.dynamics[0].mark, "mf");
+  assert.equal(project.dynamics[0].tick, project.notes[0].scoreTick);
+});
+
+test("MIDI import starts with no dynamic marks", () => {
+  const source = createInitialProject();
+  const bytes = exportMidi(source);
+  const project = importMidi(bytes.buffer ?? bytes);
+  assert.deepEqual(project.dynamics, []);
 });

@@ -144,6 +144,18 @@ textarea {
   border-color: var(--accent);
 }
 
+.dynamic-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.dynamic-grid button {
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  padding: 6px 0;
+}
+
 .editor {
   padding: 14px;
   display: grid;
@@ -359,6 +371,14 @@ textarea {
 
 .articulation-label {
   font-size: 10px;
+}
+
+.dynamic-mark {
+  fill: #1d2a2f;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 15px;
 }
 
 .note-head {
