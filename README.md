@@ -9,6 +9,12 @@ The MVP follows these rules:
 - Instrument Profiles map those internal parameters to MIDI CC, keyswitches, velocity, or manual/setup-only targets.
 - Logic, Opus, and Kontakt internal files are not modified.
 
+## Repository Note
+
+The current `master` branch is the source of truth for this browser prototype.
+Older `master` content was preserved only as a backup branch before the overwrite.
+Do not use the old `master` backup as project reference material unless explicitly asked.
+
 ## Run
 
 Open `index.html` directly in a browser, or run a local server:

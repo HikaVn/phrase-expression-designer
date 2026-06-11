@@ -4,6 +4,12 @@
 
 Phrase Expression Designer is a notation, piano roll, and expression-curve based tool for generating performance control data for string and sustained virtual instruments.
 
+## Repository Source of Truth
+
+- Treat the current `master` branch as the source of truth.
+- Ignore the old `master` backup branch created before the browser prototype overwrite.
+- Do not restore, merge, or use the old backup content as reference material unless the user explicitly asks for it.
+
 ## Core Principles
 
 - Separate score position from actual performance timing.
