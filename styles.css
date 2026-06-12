@@ -433,6 +433,11 @@ textarea:focus {
   font-style: italic;
   font-weight: 700;
   font-size: 15px;
+  cursor: pointer;
+}
+
+.dynamic-mark.selected {
+  fill: #b8324f;
 }
 
 .note-head {

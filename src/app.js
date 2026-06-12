@@ -9,6 +9,7 @@ import {
   applyNoteLetter,
   applyPhraseTemplate,
   dynamicCommandFromText,
+  removeDynamic,
   applySelectedNoteDuration,
   cloneProject,
   computePerformanceNotes,
@@ -596,6 +597,7 @@ function onKeyDown(event) {
     mutate("Clear selection", () => {
       project.selectedIds = [];
       project.selectedBars = [];
+      project.selectedDynamicId = null;
       project.mode = "select";
     });
     return;
@@ -619,6 +621,13 @@ function onKeyDown(event) {
     event.preventDefault();
     if (selectedCurvePoint) {
       deleteSelectedCurvePoint();
+      return;
+    }
+    if (project.selectedDynamicId) {
+      mutate("Delete dynamic", () => {
+        removeDynamic(project, project.selectedDynamicId);
+        project.selectedDynamicId = null;
+      });
       return;
     }
     deleteSelection();
@@ -951,7 +960,15 @@ function renderNotation(profile) {
 
   (project.dynamics ?? []).forEach((dyn) => {
     const x = left + dyn.tick * xScale;
-    svg.append(textEl(x - 6, top + 96, dyn.mark, "dynamic-mark"));
+    const selected = project.selectedDynamicId === dyn.id;
+    const mark = textEl(x - 6, top + 96, dyn.mark, `dynamic-mark ${selected ? "selected" : ""}`);
+    mark.addEventListener("click", (event) => {
+      event.stopPropagation();
+      mutate("Select dynamic", () => {
+        project.selectedDynamicId = selected ? null : dyn.id;
+      });
+    });
+    svg.append(mark);
   });
 
   project.notes.forEach((note) => {

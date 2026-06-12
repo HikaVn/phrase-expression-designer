@@ -177,6 +177,7 @@ export function createInitialProject() {
     slurs: [],
     crescendos: [],
     dynamics: [],
+    selectedDynamicId: null,
     expressionCurves: {
       intensity: { parameter: "intensity", points: [{ tick: 0, value: 0.35 }, { tick: 1920, value: 0.8 }, { tick: 3840, value: 0.55 }] },
       volume: { parameter: "volume", points: [{ tick: 0, value: 0.45 }, { tick: 3840, value: 0.62 }] },
@@ -495,6 +496,29 @@ export function applyDynamic(project, mark) {
   targets.forEach((note) => {
     note.velocity = velocityForDynamic(sampleCurve(project, "intensity", note.scoreTick));
   });
+  return true;
+}
+
+export function removeDynamic(project, dynamicId) {
+  const dynamics = project.dynamics ?? [];
+  const index = dynamics.findIndex((d) => d.id === dynamicId);
+  if (index === -1) return false;
+  const { tick } = dynamics[index];
+  dynamics.splice(index, 1);
+  // Take out the points the mark wrote: its step and the hold just before it.
+  const curve = project.expressionCurves.intensity;
+  if (curve) {
+    curve.points = curve.points.filter((p) => p.tick !== tick && p.tick !== tick - 1);
+  }
+  // Velocities in the mark's former region (up to the next mark) follow the
+  // curve that remains.
+  const next = dynamics.find((d) => d.tick > tick);
+  const limit = next ? next.tick : Infinity;
+  project.notes
+    .filter((note) => note.scoreTick >= tick && note.scoreTick < limit)
+    .forEach((note) => {
+      note.velocity = velocityForDynamic(sampleCurve(project, "intensity", note.scoreTick));
+    });
   return true;
 }
 

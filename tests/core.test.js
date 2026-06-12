@@ -22,6 +22,7 @@ import {
   nearestPitchForLetter,
   noteNameToMidi,
   quantizeSelectedTimingToScore,
+  removeDynamic,
   resetLocalOffsets,
   sampleCurve,
   selectedNotes,
@@ -397,4 +398,22 @@ test("dynamicCommandFromText parses marks and hairpins, rejects noise", () => {
   assert.deepEqual(dynamicCommandFromText("dim"), { type: "hairpin", direction: "decrescendo" });
   assert.equal(dynamicCommandFromText("fortissimo"), null);
   assert.equal(dynamicCommandFromText(""), null);
+});
+
+test("removeDynamic deletes the mark, its curve step, and re-derives velocities", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = { parameter: "intensity", points: [] };
+  project.selectedIds = [project.notes[0].id];
+  applyDynamic(project, "p");
+  project.selectedIds = [project.notes[2].id]; // tick 1920
+  applyDynamic(project, "ff");
+  const ffMark = project.dynamics.find((d) => d.mark === "ff");
+
+  assert.equal(removeDynamic(project, ffMark.id), true);
+  assert.deepEqual(project.dynamics.map((d) => d.mark), ["p"]);
+  // The ff step (and its hold point) are gone: the level is p throughout.
+  assert.equal(sampleCurve(project, "intensity", 1920), dynamicValue("p"));
+  // Velocities behind the deleted mark follow the remaining curve again.
+  assert.equal(project.notes[2].velocity, velocityForDynamic(dynamicValue("p")));
+  assert.equal(removeDynamic(project, "missing"), false);
 });
