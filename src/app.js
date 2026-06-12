@@ -11,7 +11,9 @@ import {
   applyPhraseTemplate,
   dynamicCommandFromText,
   removeDynamic,
+  isSharpPitch,
   setNoteExpression,
+  staffPosition,
   applySelectedNoteDuration,
   cloneProject,
   computePerformanceNotes,
@@ -160,7 +162,8 @@ function bindElements() {
     "noteExprInfluence",
     "noteExprInfluenceOut",
     "noteExprApplyButton",
-    "noteExprClearButton"
+    "noteExprClearButton",
+    "clefSelect"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -265,6 +268,11 @@ function bindEvents() {
     currentCurveParameter = els.curveParameterSelect.value;
     selectedCurvePoint = null;
     renderCurve();
+  });
+  els.clefSelect.addEventListener("change", () => {
+    mutate("Change clef", () => {
+      project.clef = els.clefSelect.value;
+    });
   });
   els.notationSvg.addEventListener("click", onNotationBackgroundClick);
   els.curveSvg.addEventListener("click", onCurveClick);
@@ -972,6 +980,13 @@ function renderNotation(profile) {
   for (let line = 0; line < 5; line += 1) {
     svg.append(lineEl(left, top + line * staffGap, right, top + line * staffGap, "staff-line"));
   }
+  const clef = project.clef ?? "treble";
+  els.clefSelect.value = clef;
+  if (clef === "bass") {
+    svg.append(textEl(10, top + 38, "\u{1D122}", "clef-symbol clef-bass"));
+  } else {
+    svg.append(textEl(10, top + 46, "\u{1D11E}", "clef-symbol clef-treble"));
+  }
   for (let tick = 0; tick <= totalTicks; tick += ticksPerBar) {
     const x = left + tick * xScale;
     svg.append(lineEl(x, top - 10, x, top + 4 * staffGap + 10, "bar-line"));
@@ -1027,8 +1042,24 @@ function renderNotation(profile) {
     const x = left + note.scoreTick * xScale;
     const y = top + pitchToStaffY(note.pitch);
     const group = svgNode("g", { class: `note-group ${selected ? "selected" : ""}`, tabindex: "0" });
+    // Ledger lines for pitches outside the five staff lines.
+    const position = staffPosition(note.pitch, clef);
+    for (let s = -2; s >= position; s -= 2) {
+      svg.append(lineEl(x - 11, top + 48 - s * 6, x + 11, top + 48 - s * 6, "staff-line"));
+    }
+    for (let s = 10; s <= position; s += 2) {
+      svg.append(lineEl(x - 11, top + 48 - s * 6, x + 11, top + 48 - s * 6, "staff-line"));
+    }
     group.append(svgNode("ellipse", { cx: x, cy: y, rx: NOTE_HEAD_RX, ry: NOTE_HEAD_RY, class: "note-head", transform: `rotate(${NOTE_HEAD_ANGLE} ${x} ${y})` }));
-    group.append(lineEl(x + NOTE_HEAD_RX - 1, y - 1, x + NOTE_HEAD_RX - 1, y - 39, "note-stem"));
+    // Stems flip downward from the middle line up, as in engraving practice.
+    if (position >= 4) {
+      group.append(lineEl(x - NOTE_HEAD_RX + 1, y + 1, x - NOTE_HEAD_RX + 1, y + 39, "note-stem"));
+    } else {
+      group.append(lineEl(x + NOTE_HEAD_RX - 1, y - 1, x + NOTE_HEAD_RX - 1, y - 39, "note-stem"));
+    }
+    if (isSharpPitch(note.pitch)) {
+      group.append(textEl(x - 22, y + 5, "♯", "accidental"));
+    }
     group.append(textEl(x - 12, y + 22, pitchName(note.pitch, profile.noteNaming), "note-label"));
     group.append(textEl(x - 13, y + 36, getArticulation(profile, note.articulation)?.name ?? note.articulation, "articulation-label"));
     if (note.tiedToNext) group.append(pathEl(`M ${x - 4} ${y + 12} Q ${x + 22} ${y + 26} ${x + 48} ${y + 12}`, "tie"));
@@ -1481,12 +1512,9 @@ function setInputMixed(input, value) {
 }
 
 function pitchToStaffY(pitch) {
-  const pitchClassToDiatonicStep = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
-  const pitchClass = ((pitch % 12) + 12) % 12;
-  const octave = Math.floor(pitch / 12) - 2;
-  const diatonicIndex = octave * 7 + pitchClassToDiatonicStep[pitchClass];
-  const referenceG3Index = 3 * 7 + 4;
-  return 24 - (diatonicIndex - referenceG3Index) * 6;
+  // Bottom staff line sits at offset 48 (5 lines, 12px apart); each diatonic
+  // step is half a space. staffPosition handles the clef's reference pitch.
+  return 48 - staffPosition(pitch, project.clef ?? "treble") * 6;
 }
 
 function pianoRollMetrics() {

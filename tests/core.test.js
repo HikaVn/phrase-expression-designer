@@ -20,6 +20,7 @@ import {
   generateCcEvents,
   generateMidiEventList,
   importMidi,
+  isSharpPitch,
   nearestPitchForLetter,
   noteNameToMidi,
   quantizeSelectedTimingToScore,
@@ -27,6 +28,7 @@ import {
   resetLocalOffsets,
   sampleCurve,
   selectedNotes,
+  staffPosition,
   freezeSelectedTiming,
   pasteSelection,
   moveCurvePoint,
@@ -476,4 +478,25 @@ test("notes without note-level expression export exactly as before", () => {
   delete project.notes[0].expressionInfluence;
   const cc = generateCcEvents(project).find((e) => e.noteId === project.notes[0].id);
   assert.equal(cc.value, Math.round(sampleCurve(project, cc.parameter, 0) * 127));
+});
+
+test("staffPosition maps pitches to diatonic steps above each clef's bottom line", () => {
+  // Treble: E4 bottom line, B4 middle line, F5 top line; C4 one ledger below.
+  assert.equal(staffPosition(64, "treble"), 0);   // E4
+  assert.equal(staffPosition(71, "treble"), 4);   // B4 (middle line)
+  assert.equal(staffPosition(77, "treble"), 8);   // F5 (top line)
+  assert.equal(staffPosition(60, "treble"), -2);  // C4 (ledger line below)
+  // Sharps share the natural's position.
+  assert.equal(staffPosition(61, "treble"), staffPosition(60, "treble")); // C#4 = C4
+  // Bass: G2 bottom line, D3 middle line, C4 above the staff.
+  assert.equal(staffPosition(43, "bass"), 0);     // G2
+  assert.equal(staffPosition(50, "bass"), 4);     // D3 (middle line)
+  assert.equal(staffPosition(60, "bass"), 10);    // C4 (ledger line above)
+});
+
+test("isSharpPitch flags black keys only", () => {
+  assert.equal(isSharpPitch(60), false); // C
+  assert.equal(isSharpPitch(61), true);  // C#
+  assert.equal(isSharpPitch(66), true);  // F#
+  assert.equal(isSharpPitch(71), false); // B
 });

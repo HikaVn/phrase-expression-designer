@@ -464,6 +464,23 @@ textarea:focus {
   font-size: 10px;
 }
 
+.clef-symbol {
+  fill: var(--ink);
+}
+
+.clef-treble {
+  font-size: 58px;
+}
+
+.clef-bass {
+  font-size: 44px;
+}
+
+.accidental {
+  fill: var(--ink);
+  font-size: 15px;
+}
+
 .dynamic-mark {
   fill: var(--ink);
   font-family: Georgia, "Times New Roman", serif;

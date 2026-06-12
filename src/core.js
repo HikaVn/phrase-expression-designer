@@ -167,6 +167,7 @@ export function createInitialProject() {
     selectedIds: [],
     selectedBars: [],
     mode: "select",
+    clef: "treble",
     notes: [
       createNote({ pitch: 60, scoreTick: 0, durationTicks: 960, articulation: "sustain", velocity: 72 }),
       createNote({ pitch: 62, scoreTick: 960, durationTicks: 960, articulation: "legato", velocity: 76 }),
@@ -499,6 +500,23 @@ export function applyDynamic(project, mark) {
     note.velocity = velocityForDynamic(sampleCurve(project, "intensity", note.scoreTick));
   });
   return true;
+}
+
+// Staff geometry: diatonic steps above the staff's bottom line (half a staff
+// space each). Treble puts E4 on the bottom line, bass puts G2 there — so the
+// same pitch lands where a player expects under either clef.
+const DIATONIC_STEP = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
+const CLEF_BOTTOM_STEP = { treble: 4 * 7 + 2, bass: 2 * 7 + 4 }; // E4 / G2
+
+export function staffPosition(pitch, clef = "treble") {
+  const pitchClass = ((pitch % 12) + 12) % 12;
+  const octave = Math.floor(pitch / 12) - 1; // MIDI 60 = C4
+  const step = octave * 7 + DIATONIC_STEP[pitchClass];
+  return step - (CLEF_BOTTOM_STEP[clef] ?? CLEF_BOTTOM_STEP.treble);
+}
+
+export function isSharpPitch(pitch) {
+  return [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
 }
 
 // Phrase-level curve and note-level expression are independent layers; the
