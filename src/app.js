@@ -1002,10 +1002,12 @@ function renderNotation(profile) {
     const start = project.notes.find((note) => note.id === slur.startNoteId);
     const end = project.notes.find((note) => note.id === slur.endNoteId);
     if (!start || !end) return;
-    const x1 = left + start.scoreTick * xScale;
-    const x2 = left + (end.scoreTick + end.durationTicks * 0.6) * xScale;
-    const y = top + pitchToStaffY(Math.max(start.pitch, end.pitch)) - 20;
-    svg.append(pathEl(`M ${x1} ${y} Q ${(x1 + x2) / 2} ${y - 26} ${x2} ${y}`, "slur"));
+    // Notehead to notehead, arched over the higher of the two.
+    const x1 = left + start.scoreTick * xScale + 7;
+    const x2 = Math.max(left + end.scoreTick * xScale - 2, x1 + 12);
+    const yTop = top + Math.min(pitchToStaffY(start.pitch), pitchToStaffY(end.pitch)) - 12;
+    const lift = Math.min(26, 10 + (x2 - x1) * 0.08);
+    svg.append(pathEl(`M ${x1} ${yTop} Q ${(x1 + x2) / 2} ${yTop - lift} ${x2} ${yTop}`, "slur"));
   });
 
   project.crescendos.forEach((hairpin) => {
@@ -1062,7 +1064,14 @@ function renderNotation(profile) {
     }
     group.append(textEl(x - 12, y + 22, pitchName(note.pitch, profile.noteNaming), "note-label"));
     group.append(textEl(x - 13, y + 36, getArticulation(profile, note.articulation)?.name ?? note.articulation, "articulation-label"));
-    if (note.tiedToNext) group.append(pathEl(`M ${x - 4} ${y + 12} Q ${x + 22} ${y + 26} ${x + 48} ${y + 12}`, "tie"));
+    if (note.tiedToNext) {
+      // The tie reaches the next note: it spans exactly this note's duration.
+      const tieX1 = x + 7;
+      const tieX2 = Math.max(left + (note.scoreTick + note.durationTicks) * xScale - 7, tieX1 + 10);
+      group.append(pathEl(
+        `M ${tieX1} ${y + 10} Q ${(tieX1 + tieX2) / 2} ${y + 20} ${tieX2} ${y + 10}`, "tie"
+      ));
+    }
     group.addEventListener("click", (event) => {
       event.stopPropagation();
       mutate("Select note", () => selectNote(note.id, event));
