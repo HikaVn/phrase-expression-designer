@@ -42,6 +42,8 @@ npm test
   flags (double beams for 16ths)
 - Engraving-style horizontal spacing: gaps scale with duration^0.6, so 16ths
   stay readable beside whole notes; content sits clear of bar lines
+- Dense passages automatically widen the score (guaranteed minimum note
+  spacing) with horizontal scrolling; sparse scores still fit the panel
 - Rest insertion, tie flag, slur creation, crescendo/decrescendo creation
 - Dynamic marks (ppp–fff): one click sets the intensity level from that point
   (subito step), shapes note velocities to match, and engraves the mark

@@ -257,9 +257,16 @@ textarea:focus {
   background: var(--panel-2);
 }
 
-/* The score stays on paper: bright engraving inside the dark studio chrome. */
+/* The score stays on paper: bright engraving inside the dark studio chrome.
+   Dense passages widen the score; the wrapper scrolls horizontally. */
+.notation-scroll {
+  overflow-x: auto;
+  border-radius: 8px;
+}
+
 .notation-view {
   height: 260px;
+  width: auto;
   background: var(--paper);
   border-color: #00000055;
 }

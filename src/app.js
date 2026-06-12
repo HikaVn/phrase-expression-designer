@@ -944,18 +944,20 @@ function selectMeasure(barIndex, event) {
 // shifted clear of its bar line. Cached for click → bar lookups.
 let notationLayout = null;
 
-function buildNotationLayout(width) {
+function buildNotationLayout(availableWidth) {
   const left = 54;
-  const right = width - 24;
+  const MIN_NOTE_GAP_PX = 26; // dense passages widen the score instead of cramming
   const ticksPerBar = project.ppq * 4;
   const totalTicks = Math.max(ticksPerBar * 2, Math.ceil((maxScoreTick(project) + 1) / ticksPerBar) * ticksPerBar);
   const anchors = new Set([0, totalTicks]);
   for (let t = ticksPerBar; t < totalTicks; t += ticksPerBar) anchors.add(t);
+  const noteTicks = new Set();
   project.notes.forEach((note) => {
-    anchors.add(Math.min(totalTicks, note.scoreTick));
-    anchors.add(Math.min(totalTicks, note.scoreTick + note.durationTicks));
+    noteTicks.add(Math.min(totalTicks, note.scoreTick));
+    noteTicks.add(Math.min(totalTicks, note.scoreTick + note.durationTicks));
   });
-  project.rests.forEach((rest) => anchors.add(Math.min(totalTicks, rest.scoreTick)));
+  project.rests.forEach((rest) => noteTicks.add(Math.min(totalTicks, rest.scoreTick)));
+  noteTicks.forEach((t) => anchors.add(t));
   anchors.add(Math.max(0, Math.min(totalTicks, project.cursorTick)));
   const ticks = [...anchors].sort((a, b) => a - b);
   const units = [0];
@@ -963,8 +965,22 @@ function buildNotationLayout(width) {
     units.push(units[i - 1] + Math.pow(ticks[i] - ticks[i - 1], 0.6));
   }
   const span = units[units.length - 1] || 1;
-  const innerRight = right - 16;
-  const xs = units.map((u) => left + (u / span) * (innerRight - left));
+
+  // Scale: fit the panel when sparse, but never let the closest pair of
+  // note boundaries drop below MIN_NOTE_GAP_PX — grow (and scroll) instead.
+  const sortedNoteTicks = [...noteTicks].sort((a, b) => a - b);
+  let minNoteUnit = Infinity;
+  for (let i = 1; i < sortedNoteTicks.length; i += 1) {
+    const gap = sortedNoteTicks[i] - sortedNoteTicks[i - 1];
+    if (gap > 0) minNoteUnit = Math.min(minNoteUnit, Math.pow(gap, 0.6));
+  }
+  const fitScale = Math.max(0, availableWidth - left - 30) / span;
+  const minScale = Number.isFinite(minNoteUnit) ? MIN_NOTE_GAP_PX / minNoteUnit : 0;
+  const scale = Math.max(fitScale, minScale);
+
+  const xs = units.map((u) => left + u * scale);
+  const right = left + span * scale + 16;
+  const width = Math.max(right + 14, availableWidth);
   const tickX = (tick) => {
     const t = Math.max(ticks[0], Math.min(tick, ticks[ticks.length - 1]));
     const hi = ticks.findIndex((v) => v >= t);
@@ -973,20 +989,21 @@ function buildNotationLayout(width) {
     return xs[lo] + ((xs[hi] - xs[lo]) * (t - ticks[lo])) / (ticks[hi] - ticks[lo]);
   };
   const noteX = (tick) => tickX(tick) + 14;
-  return { left, right, ticksPerBar, totalTicks, barCount: Math.ceil(totalTicks / ticksPerBar), tickX, noteX };
+  return { left, right, width, ticksPerBar, totalTicks, barCount: Math.ceil(totalTicks / ticksPerBar), tickX, noteX };
 }
 
 function renderNotation(profile) {
   const svg = els.notationSvg;
   clear(svg);
-  const width = svg.clientWidth || 900;
+  const available = svg.parentElement?.clientWidth || 900;
   const height = 260;
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   const top = 78;
   const staffGap = 12;
-  const layout = buildNotationLayout(width);
+  const layout = buildNotationLayout(available);
   notationLayout = layout;
-  const { left, right, ticksPerBar, totalTicks, barCount, tickX, noteX } = layout;
+  const { left, right, width, ticksPerBar, totalTicks, barCount, tickX, noteX } = layout;
+  svg.setAttribute("width", width);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
 
   for (let barIndex = 0; barIndex < barCount; barIndex += 1) {
     const x = tickX(barIndex * ticksPerBar);
