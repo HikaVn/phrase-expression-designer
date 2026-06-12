@@ -252,11 +252,6 @@ textarea:focus {
   gap: 8px;
 }
 
-.key-sig {
-  font-size: 15px;
-  font-weight: 700;
-}
-
 .notation-view,
 .piano-roll-view,
 .curve-view {
@@ -485,17 +480,23 @@ textarea:focus {
   fill: var(--ink);
 }
 
+/* Engraving proportions (1 staff space = 12px): the treble clef spans about
+   7.5 spaces, accidentals about 2.5. */
 .clef-treble {
-  font-size: 58px;
+  font-size: 84px;
 }
 
 .clef-bass {
-  font-size: 44px;
+  font-size: 50px;
 }
 
 .accidental {
   fill: var(--ink);
-  font-size: 15px;
+  font-size: 26px;
+}
+
+.key-sig {
+  font-size: 24px;
 }
 
 .dynamic-mark {
@@ -503,7 +504,7 @@ textarea:focus {
   font-family: Georgia, "Times New Roman", serif;
   font-style: italic;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 24px;
   cursor: pointer;
 }
 

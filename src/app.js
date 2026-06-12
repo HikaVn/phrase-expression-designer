@@ -957,7 +957,7 @@ let notationLayout = null;
 
 function buildNotationLayout(availableWidth) {
   // Wider left margin when a key signature needs room between clef and staff.
-  const left = 54 + Math.abs(project.keySignature ?? 0) * 9;
+  const left = 56 + Math.abs(project.keySignature ?? 0) * 11;
   const MIN_NOTE_GAP_PX = 26; // dense passages widen the score instead of cramming
   const ticksPerBar = project.ppq * 4;
   const totalTicks = Math.max(ticksPerBar * 2, Math.ceil((maxScoreTick(project) + 1) / ticksPerBar) * ticksPerBar);
@@ -1051,12 +1051,12 @@ function renderNotation(profile) {
   els.clefSelect.value = clef;
   els.keySelect.value = String(key);
   if (clef === "bass") {
-    svg.append(textEl(10, top + 38, "\u{1D122}", "clef-symbol clef-bass"));
+    svg.append(textEl(8, top + 40, "\u{1D122}", "clef-symbol clef-bass"));
   } else {
-    svg.append(textEl(10, top + 46, "\u{1D11E}", "clef-symbol clef-treble"));
+    svg.append(textEl(8, top + 52, "\u{1D11E}", "clef-symbol clef-treble"));
   }
   keySignatureSteps(key, clef).forEach((sig, index) => {
-    svg.append(textEl(38 + index * 9, top + 48 - sig.step * 6 + 5, sig.symbol, "accidental key-sig"));
+    svg.append(textEl(40 + index * 11, top + 48 - sig.step * 6 + 8, sig.symbol, "accidental key-sig"));
   });
   for (let tick = 0; tick <= totalTicks; tick += ticksPerBar) {
     const x = tickX(tick);
@@ -1130,8 +1130,8 @@ function renderNotation(profile) {
     }));
     const down = data.reduce((sum, d) => sum + d.position, 0) / data.length >= 4;
     const beamY = down
-      ? Math.max(...data.map((d) => d.y)) + 36
-      : Math.min(...data.map((d) => d.y)) - 36;
+      ? Math.max(...data.map((d) => d.y)) + 42
+      : Math.min(...data.map((d) => d.y)) - 42;
     data.forEach((d) => {
       d.stemX = down ? d.x - NOTE_HEAD_RX + 1 : d.x + NOTE_HEAD_RX - 1;
     });
@@ -1164,14 +1164,15 @@ function renderNotation(profile) {
     const geo = beamed ? beamGeometry[groupIndex.get(note.id)] : null;
     const stemDown = beamed ? geo.down : position >= 4;
     if (glyph.hasStem) {
+      // Standard stem length: 3.5 staff spaces (42px at 12px/space).
       const stemX = stemDown ? x - NOTE_HEAD_RX + 1 : x + NOTE_HEAD_RX - 1;
-      const stemEnd = beamed ? geo.beamY : (stemDown ? y + 39 : y - 39);
+      const stemEnd = beamed ? geo.beamY : (stemDown ? y + 42 : y - 42);
       group.append(lineEl(stemX, stemDown ? y + 1 : y - 1, stemX, stemEnd, "note-stem"));
       if (!beamed) {
         for (let i = 0; i < glyph.flags; i += 1) {
-          const flagY = stemDown ? y + 39 - i * 8 : y - 39 + i * 8;
+          const flagY = stemDown ? y + 42 - i * 9 : y - 42 + i * 9;
           const dir = stemDown ? -1 : 1;
-          group.append(pathEl(`M ${stemX} ${flagY} q 10 ${4 * dir} 8 ${16 * dir}`, "note-flag"));
+          group.append(pathEl(`M ${stemX} ${flagY} q 11 ${5 * dir} 9 ${19 * dir}`, "note-flag"));
         }
       }
     }
@@ -1179,11 +1180,11 @@ function renderNotation(profile) {
       // The augmentation dot sits right of the head; notes on a line get it
       // in the space above.
       const dotY = position % 2 === 0 ? y - 4 : y;
-      group.append(svgNode("circle", { cx: x + 12, cy: dotY, r: 2.2, class: "aug-dot" }));
+      group.append(svgNode("circle", { cx: x + 13, cy: dotY, r: 2.5, class: "aug-dot" }));
     }
     const accidental = noteSpelling(note.pitch, key).accidental;
     if (accidental) {
-      group.append(textEl(x - 22, y + 5, accidental, "accidental"));
+      group.append(textEl(x - 26, y + 8, accidental, "accidental"));
     }
     group.append(textEl(x - 12, y + 22, pitchName(note.pitch, profile.noteNaming), "note-label"));
     group.append(textEl(x - 13, y + 36, getArticulation(profile, note.articulation)?.name ?? note.articulation, "articulation-label"));
