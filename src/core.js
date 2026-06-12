@@ -546,6 +546,28 @@ export function noteGlyph(durationTicks, ppq) {
   };
 }
 
+// Beam grouping: runs of flagged notes (8th and shorter) that are contiguous
+// in time and stay inside one beat are beamed together instead of flagged.
+export function beamGroups(notes, ppq) {
+  const sorted = [...notes].sort((a, b) => a.scoreTick - b.scoreTick);
+  const groups = [];
+  let current = null;
+  sorted.forEach((note) => {
+    const flags = noteGlyph(note.durationTicks, ppq).flags;
+    const beat = Math.floor(note.scoreTick / ppq);
+    if (flags >= 1 && current && current.end === note.scoreTick && current.beat === beat) {
+      current.ids.push(note.id);
+      current.end = note.scoreTick + note.durationTicks;
+    } else if (flags >= 1) {
+      current = { ids: [note.id], beat, end: note.scoreTick + note.durationTicks };
+      groups.push(current);
+    } else {
+      current = null;
+    }
+  });
+  return groups.filter((group) => group.ids.length >= 2).map((group) => group.ids);
+}
+
 // Phrase-level curve and note-level expression are independent layers; the
 // output mixes them per note: phrase + (note - phrase) * influence.
 // influence 1.0 = the note's value wins fully, 0.0 = phrase only.

@@ -516,6 +516,12 @@ textarea:focus {
   stroke-linecap: round;
 }
 
+.note-beam {
+  stroke: var(--ink);
+  stroke-width: 4.5;
+  stroke-linecap: butt;
+}
+
 .aug-dot {
   fill: var(--ink);
 }

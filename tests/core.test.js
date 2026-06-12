@@ -7,6 +7,7 @@ import {
   addSlur,
   applyBatchProperties,
   applyNoteLetter,
+  beamGroups,
   applySelectedNoteDuration,
   computePerformanceNotes,
   copySelection,
@@ -512,4 +513,24 @@ test("noteGlyph classifies durations for engraving (ppq 960)", () => {
   assert.deepEqual(noteGlyph(360, 960),  { base: 16, dotted: true, hollow: false, hasStem: true, flags: 2 });
   assert.deepEqual(noteGlyph(240, 960),  { base: 16, dotted: false, hollow: false, hasStem: true, flags: 2 });
   assert.deepEqual(noteGlyph(120, 960),  { base: 32, dotted: false, hollow: false, hasStem: true, flags: 3 });
+});
+
+test("beamGroups beams contiguous flagged notes within one beat", () => {
+  const mk = (id, tick, dur) => ({ id, scoreTick: tick, durationTicks: dur, pitch: 60 });
+  // 2 eighths in beat 1, then a quarter, then 4 sixteenths in beat 3,
+  // then 2 eighths straddling the beat-3/4 boundary (must split apart).
+  const notes = [
+    mk("a", 0, 480), mk("b", 480, 480),
+    mk("c", 960, 960),
+    mk("d", 1920, 240), mk("e", 2160, 240), mk("f", 2400, 240), mk("g", 2640, 240),
+    mk("h", 3360, 480), mk("i", 3840, 480)
+  ];
+  const groups = beamGroups(notes, 960);
+  assert.deepEqual(groups, [["a", "b"], ["d", "e", "f", "g"]]);
+});
+
+test("beamGroups requires contiguity: a gap breaks the beam", () => {
+  const mk = (id, tick, dur) => ({ id, scoreTick: tick, durationTicks: dur, pitch: 60 });
+  const notes = [mk("a", 0, 240), mk("b", 480, 240)]; // rest between
+  assert.deepEqual(beamGroups(notes, 960), []);
 });

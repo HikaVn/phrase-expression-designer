@@ -9,6 +9,7 @@ import {
   applyDynamic,
   applyNoteLetter,
   applyPhraseTemplate,
+  beamGroups,
   dynamicCommandFromText,
   removeDynamic,
   isSharpPitch,
@@ -938,6 +939,43 @@ function selectMeasure(barIndex, event) {
   project.selectedBars = [barIndex];
 }
 
+// Engraving-style horizontal layout: each gap gets width proportional to
+// duration^0.6 (so 16ths stay readable next to whole notes), and content is
+// shifted clear of its bar line. Cached for click → bar lookups.
+let notationLayout = null;
+
+function buildNotationLayout(width) {
+  const left = 54;
+  const right = width - 24;
+  const ticksPerBar = project.ppq * 4;
+  const totalTicks = Math.max(ticksPerBar * 2, Math.ceil((maxScoreTick(project) + 1) / ticksPerBar) * ticksPerBar);
+  const anchors = new Set([0, totalTicks]);
+  for (let t = ticksPerBar; t < totalTicks; t += ticksPerBar) anchors.add(t);
+  project.notes.forEach((note) => {
+    anchors.add(Math.min(totalTicks, note.scoreTick));
+    anchors.add(Math.min(totalTicks, note.scoreTick + note.durationTicks));
+  });
+  project.rests.forEach((rest) => anchors.add(Math.min(totalTicks, rest.scoreTick)));
+  anchors.add(Math.max(0, Math.min(totalTicks, project.cursorTick)));
+  const ticks = [...anchors].sort((a, b) => a - b);
+  const units = [0];
+  for (let i = 1; i < ticks.length; i += 1) {
+    units.push(units[i - 1] + Math.pow(ticks[i] - ticks[i - 1], 0.6));
+  }
+  const span = units[units.length - 1] || 1;
+  const innerRight = right - 16;
+  const xs = units.map((u) => left + (u / span) * (innerRight - left));
+  const tickX = (tick) => {
+    const t = Math.max(ticks[0], Math.min(tick, ticks[ticks.length - 1]));
+    const hi = ticks.findIndex((v) => v >= t);
+    if (ticks[hi] === t) return xs[hi];
+    const lo = hi - 1;
+    return xs[lo] + ((xs[hi] - xs[lo]) * (t - ticks[lo])) / (ticks[hi] - ticks[lo]);
+  };
+  const noteX = (tick) => tickX(tick) + 14;
+  return { left, right, ticksPerBar, totalTicks, barCount: Math.ceil(totalTicks / ticksPerBar), tickX, noteX };
+}
+
 function renderNotation(profile) {
   const svg = els.notationSvg;
   clear(svg);
@@ -946,19 +984,16 @@ function renderNotation(profile) {
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   const top = 78;
   const staffGap = 12;
-  const left = 54;
-  const right = width - 24;
-  const ticksPerBar = project.ppq * 4;
-  const totalTicks = Math.max(ticksPerBar * 2, Math.ceil((maxScoreTick(project) + 1) / ticksPerBar) * ticksPerBar);
-  const xScale = (right - left) / totalTicks;
-  const barCount = Math.ceil(totalTicks / ticksPerBar);
+  const layout = buildNotationLayout(width);
+  notationLayout = layout;
+  const { left, right, ticksPerBar, totalTicks, barCount, tickX, noteX } = layout;
 
   for (let barIndex = 0; barIndex < barCount; barIndex += 1) {
-    const x = left + barIndex * ticksPerBar * xScale;
+    const x = tickX(barIndex * ticksPerBar);
     svg.append(svgNode("rect", {
       x,
       y: top - 22,
-      width: Math.min(ticksPerBar * xScale, right - x),
+      width: tickX(Math.min((barIndex + 1) * ticksPerBar, totalTicks)) - x,
       height: 4 * staffGap + 62,
       class: "measure-hit-area",
       "data-bar-index": barIndex
@@ -966,12 +1001,12 @@ function renderNotation(profile) {
   }
 
   (project.selectedBars ?? []).forEach((barIndex) => {
-    const x = left + barIndex * ticksPerBar * xScale;
+    const x = tickX(barIndex * ticksPerBar);
     if (x >= left && x < right) {
       svg.append(svgNode("rect", {
         x,
         y: top - 14,
-        width: Math.min(ticksPerBar * xScale, right - x),
+        width: tickX(Math.min((barIndex + 1) * ticksPerBar, totalTicks)) - x,
         height: 4 * staffGap + 28,
         class: "measure-selection"
       }));
@@ -989,13 +1024,13 @@ function renderNotation(profile) {
     svg.append(textEl(10, top + 46, "\u{1D11E}", "clef-symbol clef-treble"));
   }
   for (let tick = 0; tick <= totalTicks; tick += ticksPerBar) {
-    const x = left + tick * xScale;
+    const x = tickX(tick);
     svg.append(lineEl(x, top - 10, x, top + 4 * staffGap + 10, "bar-line"));
     svg.append(textEl(x + 5, top - 18, String(Math.floor(tick / ticksPerBar) + 1), "bar-number"));
   }
 
   project.rests.forEach((rest) => {
-    const x = left + rest.scoreTick * xScale;
+    const x = noteX(rest.scoreTick);
     svg.append(textEl(x, top + 24, "休", "rest-symbol"));
   });
 
@@ -1005,8 +1040,8 @@ function renderNotation(profile) {
     if (!start || !end) return;
     // Notehead to notehead, arched over the higher of the two. Margins shrink
     // with the gap so tightly spaced notes never get overshot.
-    const startX = left + start.scoreTick * xScale;
-    const endX = left + end.scoreTick * xScale;
+    const startX = noteX(start.scoreTick);
+    const endX = noteX(end.scoreTick);
     const margin = Math.min(7, Math.max(1.5, (endX - startX) * 0.15));
     const x1 = startX + margin;
     const x2 = Math.max(endX - 2, x1 + 6);
@@ -1019,8 +1054,8 @@ function renderNotation(profile) {
     const start = project.notes.find((note) => note.id === hairpin.startNoteId);
     const end = project.notes.find((note) => note.id === hairpin.endNoteId);
     if (!start || !end) return;
-    const x1 = left + start.scoreTick * xScale;
-    const x2 = left + (end.scoreTick + end.durationTicks) * xScale;
+    const x1 = noteX(start.scoreTick);
+    const x2 = noteX(end.scoreTick + end.durationTicks);
     const y = top + 78;
     if (hairpin.direction === "crescendo") {
       svg.append(lineEl(x1, y, x2, y - 10, "hairpin"));
@@ -1032,7 +1067,7 @@ function renderNotation(profile) {
   });
 
   (project.dynamics ?? []).forEach((dyn) => {
-    const x = left + dyn.tick * xScale;
+    const x = noteX(dyn.tick);
     const selected = project.selectedDynamicId === dyn.id;
     const mark = textEl(x - 6, top + 96, dyn.mark, `dynamic-mark ${selected ? "selected" : ""}`);
     mark.addEventListener("click", (event) => {
@@ -1044,9 +1079,33 @@ function renderNotation(profile) {
     svg.append(mark);
   });
 
+  // Beamed groups: contiguous flagged notes within a beat share one beam
+  // instead of individual flags. Geometry is computed up front so every
+  // member's stem can reach the common beam line.
+  const groupsList = beamGroups(project.notes, project.ppq);
+  const groupIndex = new Map();
+  groupsList.forEach((ids, gi) => ids.forEach((id) => groupIndex.set(id, gi)));
+  const beamGeometry = groupsList.map((ids) => {
+    const members = ids.map((id) => project.notes.find((n) => n.id === id));
+    const data = members.map((member) => ({
+      x: noteX(member.scoreTick),
+      y: top + pitchToStaffY(member.pitch),
+      position: staffPosition(member.pitch, clef),
+      flags: noteGlyph(member.durationTicks, project.ppq).flags
+    }));
+    const down = data.reduce((sum, d) => sum + d.position, 0) / data.length >= 4;
+    const beamY = down
+      ? Math.max(...data.map((d) => d.y)) + 36
+      : Math.min(...data.map((d) => d.y)) - 36;
+    data.forEach((d) => {
+      d.stemX = down ? d.x - NOTE_HEAD_RX + 1 : d.x + NOTE_HEAD_RX - 1;
+    });
+    return { data, down, beamY };
+  });
+
   project.notes.forEach((note) => {
     const selected = project.selectedIds.includes(note.id);
-    const x = left + note.scoreTick * xScale;
+    const x = noteX(note.scoreTick);
     const y = top + pitchToStaffY(note.pitch);
     const group = svgNode("g", { class: `note-group ${selected ? "selected" : ""}`, tabindex: "0" });
     // Ledger lines for pitches outside the five staff lines.
@@ -1064,15 +1123,21 @@ function renderNotation(profile) {
       transform: `rotate(${NOTE_HEAD_ANGLE} ${x} ${y})`
     }));
     // Stems flip downward from the middle line up; flags hang off the stem
-    // tip and stack toward the head (one per halving below a quarter).
-    const stemDown = position >= 4;
+    // tip — unless the note is beamed, in which case the stem reaches the
+    // group's beam line and the flags are suppressed.
+    const beamed = groupIndex.has(note.id);
+    const geo = beamed ? beamGeometry[groupIndex.get(note.id)] : null;
+    const stemDown = beamed ? geo.down : position >= 4;
     if (glyph.hasStem) {
       const stemX = stemDown ? x - NOTE_HEAD_RX + 1 : x + NOTE_HEAD_RX - 1;
-      group.append(lineEl(stemX, stemDown ? y + 1 : y - 1, stemX, stemDown ? y + 39 : y - 39, "note-stem"));
-      for (let i = 0; i < glyph.flags; i += 1) {
-        const flagY = stemDown ? y + 39 - i * 8 : y - 39 + i * 8;
-        const dir = stemDown ? -1 : 1;
-        group.append(pathEl(`M ${stemX} ${flagY} q 10 ${4 * dir} 8 ${16 * dir}`, "note-flag"));
+      const stemEnd = beamed ? geo.beamY : (stemDown ? y + 39 : y - 39);
+      group.append(lineEl(stemX, stemDown ? y + 1 : y - 1, stemX, stemEnd, "note-stem"));
+      if (!beamed) {
+        for (let i = 0; i < glyph.flags; i += 1) {
+          const flagY = stemDown ? y + 39 - i * 8 : y - 39 + i * 8;
+          const dir = stemDown ? -1 : 1;
+          group.append(pathEl(`M ${stemX} ${flagY} q 10 ${4 * dir} 8 ${16 * dir}`, "note-flag"));
+        }
       }
     }
     if (glyph.dotted) {
@@ -1089,7 +1154,7 @@ function renderNotation(profile) {
     if (note.tiedToNext) {
       // The tie spans exactly this note's duration, reaching the next
       // notehead; margins shrink with the gap so short values stay inside it.
-      const nextX = left + (note.scoreTick + note.durationTicks) * xScale;
+      const nextX = noteX(note.scoreTick + note.durationTicks);
       const margin = Math.min(7, Math.max(1.5, (nextX - x) * 0.3));
       const tieX1 = x + margin;
       const tieX2 = Math.max(nextX - margin, tieX1 + 3);
@@ -1105,7 +1170,21 @@ function renderNotation(profile) {
     svg.append(group);
   });
 
-  const cursorX = left + project.cursorTick * xScale;
+  // Beam bars: one per flag level shared by each adjacent pair, stacked
+  // inward from the beam line.
+  beamGeometry.forEach(({ data, down, beamY }) => {
+    for (let i = 0; i < data.length - 1; i += 1) {
+      const a = data[i];
+      const b = data[i + 1];
+      const count = Math.min(a.flags, b.flags);
+      for (let k = 0; k < count; k += 1) {
+        const yk = beamY + (down ? -k * 6 : k * 6);
+        svg.append(lineEl(a.stemX, yk, b.stemX, yk, "note-beam"));
+      }
+    }
+  });
+
+  const cursorX = noteX(project.cursorTick);
   svg.append(lineEl(cursorX, top - 32, cursorX, top + 92, "cursor-line"));
 }
 
@@ -1123,16 +1202,16 @@ function onNotationBackgroundClick(event) {
 }
 
 function measureIndexFromNotationEvent(event) {
+  if (!notationLayout) return null;
   const rect = els.notationSvg.getBoundingClientRect();
-  const width = els.notationSvg.clientWidth || 900;
-  const left = 54;
-  const right = width - 24;
-  const ticksPerBar = project.ppq * 4;
-  const totalTicks = Math.max(ticksPerBar * 2, Math.ceil((maxScoreTick(project) + 1) / ticksPerBar) * ticksPerBar);
-  const relativeX = event.clientX - rect.left - left;
-  if (relativeX < 0 || event.clientX > rect.left + right) return null;
-  const rawTick = (relativeX / (right - left)) * totalTicks;
-  return Math.max(0, Math.min(Math.floor(rawTick / ticksPerBar), Math.ceil(totalTicks / ticksPerBar) - 1));
+  const x = event.clientX - rect.left;
+  const { left, right, ticksPerBar, totalTicks, barCount, tickX } = notationLayout;
+  if (x < left || x > right) return null;
+  for (let barIndex = 0; barIndex < barCount; barIndex += 1) {
+    const end = tickX(Math.min((barIndex + 1) * ticksPerBar, totalTicks));
+    if (x < end) return barIndex;
+  }
+  return barCount - 1;
 }
 
 function renderPianoRoll(profile) {
