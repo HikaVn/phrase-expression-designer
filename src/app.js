@@ -1002,11 +1002,15 @@ function renderNotation(profile) {
     const start = project.notes.find((note) => note.id === slur.startNoteId);
     const end = project.notes.find((note) => note.id === slur.endNoteId);
     if (!start || !end) return;
-    // Notehead to notehead, arched over the higher of the two.
-    const x1 = left + start.scoreTick * xScale + 7;
-    const x2 = Math.max(left + end.scoreTick * xScale - 2, x1 + 12);
+    // Notehead to notehead, arched over the higher of the two. Margins shrink
+    // with the gap so tightly spaced notes never get overshot.
+    const startX = left + start.scoreTick * xScale;
+    const endX = left + end.scoreTick * xScale;
+    const margin = Math.min(7, Math.max(1.5, (endX - startX) * 0.15));
+    const x1 = startX + margin;
+    const x2 = Math.max(endX - 2, x1 + 6);
     const yTop = top + Math.min(pitchToStaffY(start.pitch), pitchToStaffY(end.pitch)) - 12;
-    const lift = Math.min(26, 10 + (x2 - x1) * 0.08);
+    const lift = Math.min(26, 6 + (x2 - x1) * 0.08);
     svg.append(pathEl(`M ${x1} ${yTop} Q ${(x1 + x2) / 2} ${yTop - lift} ${x2} ${yTop}`, "slur"));
   });
 
@@ -1065,11 +1069,15 @@ function renderNotation(profile) {
     group.append(textEl(x - 12, y + 22, pitchName(note.pitch, profile.noteNaming), "note-label"));
     group.append(textEl(x - 13, y + 36, getArticulation(profile, note.articulation)?.name ?? note.articulation, "articulation-label"));
     if (note.tiedToNext) {
-      // The tie reaches the next note: it spans exactly this note's duration.
-      const tieX1 = x + 7;
-      const tieX2 = Math.max(left + (note.scoreTick + note.durationTicks) * xScale - 7, tieX1 + 10);
+      // The tie spans exactly this note's duration, reaching the next
+      // notehead; margins shrink with the gap so short values stay inside it.
+      const nextX = left + (note.scoreTick + note.durationTicks) * xScale;
+      const margin = Math.min(7, Math.max(1.5, (nextX - x) * 0.3));
+      const tieX1 = x + margin;
+      const tieX2 = Math.max(nextX - margin, tieX1 + 3);
+      const sag = Math.min(10, 4 + (tieX2 - tieX1) * 0.08);
       group.append(pathEl(
-        `M ${tieX1} ${y + 10} Q ${(tieX1 + tieX2) / 2} ${y + 20} ${tieX2} ${y + 10}`, "tie"
+        `M ${tieX1} ${y + 10} Q ${(tieX1 + tieX2) / 2} ${y + 10 + sag} ${tieX2} ${y + 10}`, "tie"
       ));
     }
     group.addEventListener("click", (event) => {
