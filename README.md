@@ -36,6 +36,9 @@ npm test
 - Notation-style note display and A-G keyboard input (`r` inserts a rest);
   selectable treble/bass clef with correct staff positions, ledger lines,
   sharps, and stem direction
+- Key signatures (7 sharps to 7 flats): engraved after the clef per-clef,
+  in-key notes drop their accidentals, out-of-key naturals get ♮, and black
+  keys spell as flats in flat keys (B♭ on B's line)
 - Duration-aware engraving: hollow whole/half noteheads, stemless whole notes,
   flags (8th/16th/32nd) that follow stem direction, and augmentation dots
 - Beaming: contiguous 8th/16th notes within a beat share beams instead of

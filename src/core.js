@@ -168,6 +168,7 @@ export function createInitialProject() {
     selectedBars: [],
     mode: "select",
     clef: "treble",
+    keySignature: 0,
     notes: [
       createNote({ pitch: 60, scoreTick: 0, durationTicks: 960, articulation: "sustain", velocity: 72 }),
       createNote({ pitch: 62, scoreTick: 960, durationTicks: 960, articulation: "legato", velocity: 76 }),
@@ -504,19 +505,77 @@ export function applyDynamic(project, mark) {
 
 // Staff geometry: diatonic steps above the staff's bottom line (half a staff
 // space each). Treble puts E4 on the bottom line, bass puts G2 there — so the
-// same pitch lands where a player expects under either clef.
-const DIATONIC_STEP = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
+// same pitch lands where a player expects under either clef. The key decides
+// the spelling (B♭ sits on B's line, A♯ on A's).
 const CLEF_BOTTOM_STEP = { treble: 4 * 7 + 2, bass: 2 * 7 + 4 }; // E4 / G2
 
-export function staffPosition(pitch, clef = "treble") {
-  const pitchClass = ((pitch % 12) + 12) % 12;
-  const octave = Math.floor(pitch / 12) - 1; // MIDI 60 = C4
-  const step = octave * 7 + DIATONIC_STEP[pitchClass];
-  return step - (CLEF_BOTTOM_STEP[clef] ?? CLEF_BOTTOM_STEP.treble);
+export function staffPosition(pitch, clef = "treble", key = 0) {
+  return noteSpelling(pitch, key).step - (CLEF_BOTTOM_STEP[clef] ?? CLEF_BOTTOM_STEP.treble);
 }
 
 export function isSharpPitch(pitch) {
   return [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
+}
+
+// Key signatures: -7..+7 (negative = flats, positive = sharps, 0 = C/Am).
+export const KEY_SIGNATURES = [
+  { value: 0, label: "C / Am" },
+  { value: 1, label: "G (♯1)" }, { value: 2, label: "D (♯2)" }, { value: 3, label: "A (♯3)" },
+  { value: 4, label: "E (♯4)" }, { value: 5, label: "B (♯5)" }, { value: 6, label: "F♯ (♯6)" },
+  { value: 7, label: "C♯ (♯7)" },
+  { value: -1, label: "F (♭1)" }, { value: -2, label: "B♭ (♭2)" }, { value: -3, label: "E♭ (♭3)" },
+  { value: -4, label: "A♭ (♭4)" }, { value: -5, label: "D♭ (♭5)" }, { value: -6, label: "G♭ (♭6)" },
+  { value: -7, label: "C♭ (♭7)" }
+];
+
+const LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const LETTER_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+const PC_LETTER = ["C", null, "D", null, "E", "F", null, "G", null, "A", null, "B"];
+const SHARP_ORDER = ["F", "C", "G", "D", "A", "E", "B"];
+const FLAT_ORDER = ["B", "E", "A", "D", "G", "C", "F"];
+
+function keyAlterFor(letter, key) {
+  if (key > 0 && SHARP_ORDER.indexOf(letter) < key) return 1;
+  if (key < 0 && FLAT_ORDER.indexOf(letter) < -key) return -1;
+  return 0;
+}
+
+// How a pitch is written under a key signature: which letter (as an absolute
+// diatonic step) and which accidental, if any, must be engraved. Black keys
+// spell sharp in sharp keys and flat in flat keys; a natural sign appears when
+// the key signature says altered but the note is not.
+export function noteSpelling(pitch, key = 0) {
+  const pc = ((pitch % 12) + 12) % 12;
+  const octave = Math.floor(pitch / 12) - 1;
+  let letter = PC_LETTER[pc];
+  let alter = 0;
+  if (letter === null) {
+    if (key < 0) {
+      letter = PC_LETTER[(pc + 1) % 12];
+      alter = -1;
+    } else {
+      letter = PC_LETTER[(pc + 11) % 12];
+      alter = 1;
+    }
+  }
+  const step = octave * 7 + LETTER_INDEX[letter];
+  const keyAlter = keyAlterFor(letter, key);
+  let accidental = null;
+  if (alter !== keyAlter) accidental = alter === 1 ? "♯" : alter === -1 ? "♭" : "♮";
+  return { letter, step, accidental };
+}
+
+// Staff steps (above the clef's bottom line) where key-signature symbols sit.
+const KEY_SIG_STEPS = {
+  treble: { sharp: [8, 5, 9, 6, 3, 7, 4], flat: [4, 7, 3, 6, 2, 5, 1] },
+  bass: { sharp: [6, 3, 7, 4, 1, 5, 2], flat: [2, 5, 1, 4, 0, 3, -1] }
+};
+
+export function keySignatureSteps(key, clef = "treble") {
+  const table = KEY_SIG_STEPS[clef] ?? KEY_SIG_STEPS.treble;
+  if (key > 0) return table.sharp.slice(0, key).map((step) => ({ step, symbol: "♯" }));
+  if (key < 0) return table.flat.slice(0, -key).map((step) => ({ step, symbol: "♭" }));
+  return [];
 }
 
 // Classify a duration for engraving: head shape, stem, flag count, dot.

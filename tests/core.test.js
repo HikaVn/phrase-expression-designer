@@ -23,6 +23,8 @@ import {
   importMidi,
   isSharpPitch,
   nearestPitchForLetter,
+  noteSpelling,
+  keySignatureSteps,
   noteGlyph,
   noteNameToMidi,
   quantizeSelectedTimingToScore,
@@ -533,4 +535,33 @@ test("beamGroups requires contiguity: a gap breaks the beam", () => {
   const mk = (id, tick, dur) => ({ id, scoreTick: tick, durationTicks: dur, pitch: 60 });
   const notes = [mk("a", 0, 240), mk("b", 480, 240)]; // rest between
   assert.deepEqual(beamGroups(notes, 960), []);
+});
+
+test("noteSpelling follows the key signature", () => {
+  // C major: black keys spell sharp and carry the sign; naturals are bare.
+  assert.deepEqual(noteSpelling(61, 0), { letter: "C", step: 28, accidental: "♯" });
+  assert.equal(noteSpelling(60, 0).accidental, null);
+  // G major (F#): F# needs no sign, F natural needs a natural sign.
+  assert.equal(noteSpelling(66, 1).accidental, null);
+  assert.deepEqual(noteSpelling(65, 1).accidental, "♮");
+  // F major (Bb): the black key spells as Bb on B's step, no sign needed.
+  const bFlat = noteSpelling(70, -1);
+  assert.equal(bFlat.letter, "B");
+  assert.equal(bFlat.accidental, null);
+  // ...but B natural in F major needs a natural sign.
+  assert.equal(noteSpelling(71, -1).accidental, "♮");
+});
+
+test("staffPosition respects key-signature spelling", () => {
+  // Pitch 70 sits on A's position as A# (sharp keys) but B's as Bb (flat keys).
+  assert.equal(staffPosition(70, "treble", 0), 3);
+  assert.equal(staffPosition(70, "treble", -1), 4);
+});
+
+test("keySignatureSteps lists the right symbols per clef", () => {
+  assert.deepEqual(keySignatureSteps(2, "treble"),
+    [{ step: 8, symbol: "♯" }, { step: 5, symbol: "♯" }]);
+  assert.deepEqual(keySignatureSteps(-3, "bass"),
+    [{ step: 2, symbol: "♭" }, { step: 5, symbol: "♭" }, { step: 1, symbol: "♭" }]);
+  assert.deepEqual(keySignatureSteps(0, "treble"), []);
 });

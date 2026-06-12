@@ -12,8 +12,10 @@ import {
   beamGroups,
   dynamicCommandFromText,
   removeDynamic,
-  isSharpPitch,
+  KEY_SIGNATURES,
+  keySignatureSteps,
   noteGlyph,
+  noteSpelling,
   setNoteExpression,
   staffPosition,
   applySelectedNoteDuration,
@@ -165,7 +167,8 @@ function bindElements() {
     "noteExprInfluenceOut",
     "noteExprApplyButton",
     "noteExprClearButton",
-    "clefSelect"
+    "clefSelect",
+    "keySelect"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -174,6 +177,9 @@ function bindElements() {
 function populateNoteExpressionParameters() {
   els.noteExprParameter.replaceChildren(
     ...INTERNAL_PARAMETERS.map((parameter) => option(parameter, parameter))
+  );
+  els.keySelect.replaceChildren(
+    ...KEY_SIGNATURES.map((sig) => option(String(sig.value), sig.label))
   );
 }
 
@@ -274,6 +280,11 @@ function bindEvents() {
   els.clefSelect.addEventListener("change", () => {
     mutate("Change clef", () => {
       project.clef = els.clefSelect.value;
+    });
+  });
+  els.keySelect.addEventListener("change", () => {
+    mutate("Change key signature", () => {
+      project.keySignature = Number(els.keySelect.value);
     });
   });
   els.notationSvg.addEventListener("click", onNotationBackgroundClick);
@@ -945,7 +956,8 @@ function selectMeasure(barIndex, event) {
 let notationLayout = null;
 
 function buildNotationLayout(availableWidth) {
-  const left = 54;
+  // Wider left margin when a key signature needs room between clef and staff.
+  const left = 54 + Math.abs(project.keySignature ?? 0) * 9;
   const MIN_NOTE_GAP_PX = 26; // dense passages widen the score instead of cramming
   const ticksPerBar = project.ppq * 4;
   const totalTicks = Math.max(ticksPerBar * 2, Math.ceil((maxScoreTick(project) + 1) / ticksPerBar) * ticksPerBar);
@@ -1030,16 +1042,22 @@ function renderNotation(profile) {
     }
   });
 
+  // The staff extends under the clef and key signature.
   for (let line = 0; line < 5; line += 1) {
-    svg.append(lineEl(left, top + line * staffGap, right, top + line * staffGap, "staff-line"));
+    svg.append(lineEl(8, top + line * staffGap, right, top + line * staffGap, "staff-line"));
   }
   const clef = project.clef ?? "treble";
+  const key = project.keySignature ?? 0;
   els.clefSelect.value = clef;
+  els.keySelect.value = String(key);
   if (clef === "bass") {
     svg.append(textEl(10, top + 38, "\u{1D122}", "clef-symbol clef-bass"));
   } else {
     svg.append(textEl(10, top + 46, "\u{1D11E}", "clef-symbol clef-treble"));
   }
+  keySignatureSteps(key, clef).forEach((sig, index) => {
+    svg.append(textEl(38 + index * 9, top + 48 - sig.step * 6 + 5, sig.symbol, "accidental key-sig"));
+  });
   for (let tick = 0; tick <= totalTicks; tick += ticksPerBar) {
     const x = tickX(tick);
     svg.append(lineEl(x, top - 10, x, top + 4 * staffGap + 10, "bar-line"));
@@ -1107,7 +1125,7 @@ function renderNotation(profile) {
     const data = members.map((member) => ({
       x: noteX(member.scoreTick),
       y: top + pitchToStaffY(member.pitch),
-      position: staffPosition(member.pitch, clef),
+      position: staffPosition(member.pitch, clef, key),
       flags: noteGlyph(member.durationTicks, project.ppq).flags
     }));
     const down = data.reduce((sum, d) => sum + d.position, 0) / data.length >= 4;
@@ -1126,7 +1144,7 @@ function renderNotation(profile) {
     const y = top + pitchToStaffY(note.pitch);
     const group = svgNode("g", { class: `note-group ${selected ? "selected" : ""}`, tabindex: "0" });
     // Ledger lines for pitches outside the five staff lines.
-    const position = staffPosition(note.pitch, clef);
+    const position = staffPosition(note.pitch, clef, key);
     for (let s = -2; s >= position; s -= 2) {
       svg.append(lineEl(x - 11, top + 48 - s * 6, x + 11, top + 48 - s * 6, "staff-line"));
     }
@@ -1163,8 +1181,9 @@ function renderNotation(profile) {
       const dotY = position % 2 === 0 ? y - 4 : y;
       group.append(svgNode("circle", { cx: x + 12, cy: dotY, r: 2.2, class: "aug-dot" }));
     }
-    if (isSharpPitch(note.pitch)) {
-      group.append(textEl(x - 22, y + 5, "♯", "accidental"));
+    const accidental = noteSpelling(note.pitch, key).accidental;
+    if (accidental) {
+      group.append(textEl(x - 22, y + 5, accidental, "accidental"));
     }
     group.append(textEl(x - 12, y + 22, pitchName(note.pitch, profile.noteNaming), "note-label"));
     group.append(textEl(x - 13, y + 36, getArticulation(profile, note.articulation)?.name ?? note.articulation, "articulation-label"));
@@ -1644,8 +1663,9 @@ function setInputMixed(input, value) {
 
 function pitchToStaffY(pitch) {
   // Bottom staff line sits at offset 48 (5 lines, 12px apart); each diatonic
-  // step is half a space. staffPosition handles the clef's reference pitch.
-  return 48 - staffPosition(pitch, project.clef ?? "treble") * 6;
+  // step is half a space. staffPosition handles the clef's reference pitch
+  // and the key signature's spelling (B♭ on B's line, A♯ on A's).
+  return 48 - staffPosition(pitch, project.clef ?? "treble", project.keySignature ?? 0) * 6;
 }
 
 function pianoRollMetrics() {
