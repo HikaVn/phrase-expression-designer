@@ -36,6 +36,8 @@ npm test
 - Notation-style note display and A-G keyboard input (`r` inserts a rest);
   selectable treble/bass clef with correct staff positions, ledger lines,
   sharps, and stem direction
+- Duration-aware engraving: hollow whole/half noteheads, stemless whole notes,
+  flags (8th/16th/32nd) that follow stem direction, and augmentation dots
 - Rest insertion, tie flag, slur creation, crescendo/decrescendo creation
 - Dynamic marks (ppp–fff): one click sets the intensity level from that point
   (subito step), shapes note velocities to match, and engraves the mark

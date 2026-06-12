@@ -499,14 +499,43 @@ textarea:focus {
   stroke: var(--ink);
 }
 
+.note-head.hollow {
+  fill: var(--paper);
+  stroke-width: 2;
+}
+
 .note-stem {
   stroke: var(--ink);
   stroke-width: 2;
 }
 
+.note-flag {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+.aug-dot {
+  fill: var(--ink);
+}
+
 .note-group.selected .note-head {
   fill: #b8324f;
   stroke: #b8324f;
+}
+
+.note-group.selected .note-head.hollow {
+  fill: var(--paper);
+}
+
+.note-group.selected .note-stem,
+.note-group.selected .note-flag {
+  stroke: #b8324f;
+}
+
+.note-group.selected .aug-dot {
+  fill: #b8324f;
 }
 
 .slur,

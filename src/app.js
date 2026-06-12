@@ -12,6 +12,7 @@ import {
   dynamicCommandFromText,
   removeDynamic,
   isSharpPitch,
+  noteGlyph,
   setNoteExpression,
   staffPosition,
   applySelectedNoteDuration,
@@ -1056,12 +1057,29 @@ function renderNotation(profile) {
     for (let s = 10; s <= position; s += 2) {
       svg.append(lineEl(x - 11, top + 48 - s * 6, x + 11, top + 48 - s * 6, "staff-line"));
     }
-    group.append(svgNode("ellipse", { cx: x, cy: y, rx: NOTE_HEAD_RX, ry: NOTE_HEAD_RY, class: "note-head", transform: `rotate(${NOTE_HEAD_ANGLE} ${x} ${y})` }));
-    // Stems flip downward from the middle line up, as in engraving practice.
-    if (position >= 4) {
-      group.append(lineEl(x - NOTE_HEAD_RX + 1, y + 1, x - NOTE_HEAD_RX + 1, y + 39, "note-stem"));
-    } else {
-      group.append(lineEl(x + NOTE_HEAD_RX - 1, y - 1, x + NOTE_HEAD_RX - 1, y - 39, "note-stem"));
+    const glyph = noteGlyph(note.durationTicks, project.ppq);
+    group.append(svgNode("ellipse", {
+      cx: x, cy: y, rx: NOTE_HEAD_RX, ry: NOTE_HEAD_RY,
+      class: `note-head ${glyph.hollow ? "hollow" : ""}`,
+      transform: `rotate(${NOTE_HEAD_ANGLE} ${x} ${y})`
+    }));
+    // Stems flip downward from the middle line up; flags hang off the stem
+    // tip and stack toward the head (one per halving below a quarter).
+    const stemDown = position >= 4;
+    if (glyph.hasStem) {
+      const stemX = stemDown ? x - NOTE_HEAD_RX + 1 : x + NOTE_HEAD_RX - 1;
+      group.append(lineEl(stemX, stemDown ? y + 1 : y - 1, stemX, stemDown ? y + 39 : y - 39, "note-stem"));
+      for (let i = 0; i < glyph.flags; i += 1) {
+        const flagY = stemDown ? y + 39 - i * 8 : y - 39 + i * 8;
+        const dir = stemDown ? -1 : 1;
+        group.append(pathEl(`M ${stemX} ${flagY} q 10 ${4 * dir} 8 ${16 * dir}`, "note-flag"));
+      }
+    }
+    if (glyph.dotted) {
+      // The augmentation dot sits right of the head; notes on a line get it
+      // in the space above.
+      const dotY = position % 2 === 0 ? y - 4 : y;
+      group.append(svgNode("circle", { cx: x + 12, cy: dotY, r: 2.2, class: "aug-dot" }));
     }
     if (isSharpPitch(note.pitch)) {
       group.append(textEl(x - 22, y + 5, "♯", "accidental"));

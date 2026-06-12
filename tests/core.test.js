@@ -22,6 +22,7 @@ import {
   importMidi,
   isSharpPitch,
   nearestPitchForLetter,
+  noteGlyph,
   noteNameToMidi,
   quantizeSelectedTimingToScore,
   removeDynamic,
@@ -499,4 +500,16 @@ test("isSharpPitch flags black keys only", () => {
   assert.equal(isSharpPitch(61), true);  // C#
   assert.equal(isSharpPitch(66), true);  // F#
   assert.equal(isSharpPitch(71), false); // B
+});
+
+test("noteGlyph classifies durations for engraving (ppq 960)", () => {
+  assert.deepEqual(noteGlyph(3840, 960), { base: 1, dotted: false, hollow: true, hasStem: false, flags: 0 });
+  assert.deepEqual(noteGlyph(2880, 960), { base: 2, dotted: true, hollow: true, hasStem: true, flags: 0 });
+  assert.deepEqual(noteGlyph(1920, 960), { base: 2, dotted: false, hollow: true, hasStem: true, flags: 0 });
+  assert.deepEqual(noteGlyph(960, 960),  { base: 4, dotted: false, hollow: false, hasStem: true, flags: 0 });
+  assert.deepEqual(noteGlyph(720, 960),  { base: 8, dotted: true, hollow: false, hasStem: true, flags: 1 });
+  assert.deepEqual(noteGlyph(480, 960),  { base: 8, dotted: false, hollow: false, hasStem: true, flags: 1 });
+  assert.deepEqual(noteGlyph(360, 960),  { base: 16, dotted: true, hollow: false, hasStem: true, flags: 2 });
+  assert.deepEqual(noteGlyph(240, 960),  { base: 16, dotted: false, hollow: false, hasStem: true, flags: 2 });
+  assert.deepEqual(noteGlyph(120, 960),  { base: 32, dotted: false, hollow: false, hasStem: true, flags: 3 });
 });

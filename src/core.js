@@ -519,6 +519,33 @@ export function isSharpPitch(pitch) {
   return [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
 }
 
+// Classify a duration for engraving: head shape, stem, flag count, dot.
+// base 1 = whole, 2 = half, ... 32 = thirty-second.
+export function noteGlyph(durationTicks, ppq) {
+  const bases = [
+    { base: 1, ticks: ppq * 4 },
+    { base: 2, ticks: ppq * 2 },
+    { base: 4, ticks: ppq },
+    { base: 8, ticks: ppq / 2 },
+    { base: 16, ticks: ppq / 4 },
+    { base: 32, ticks: ppq / 8 }
+  ];
+  let chosen = bases[bases.length - 1];
+  for (const candidate of bases) {
+    if (durationTicks >= candidate.ticks) {
+      chosen = candidate;
+      break;
+    }
+  }
+  return {
+    base: chosen.base,
+    dotted: durationTicks >= chosen.ticks * 1.5 && chosen.base > 1,
+    hollow: chosen.base <= 2,
+    hasStem: chosen.base >= 2,
+    flags: chosen.base >= 8 ? Math.log2(chosen.base) - 2 : 0
+  };
+}
+
 // Phrase-level curve and note-level expression are independent layers; the
 // output mixes them per note: phrase + (note - phrase) * influence.
 // influence 1.0 = the note's value wins fully, 0.0 = phrase only.
