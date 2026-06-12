@@ -294,6 +294,43 @@ textarea:focus {
   letter-spacing: 0;
 }
 
+.block-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.property-row.wide-row {
+  grid-template-columns: 1fr minmax(120px, 150px);
+}
+
+.influence-row {
+  display: grid;
+  grid-template-columns: auto 1fr 52px;
+  align-items: center;
+  gap: 8px;
+}
+
+.influence-row label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.influence-row output {
+  font-size: 12px;
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.influence-row input[type="range"] {
+  accent-color: var(--accent);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .timing-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -548,6 +585,10 @@ textarea:focus {
 }
 
 /* ---- dynamics popover (Cmd+E) ---- */
+
+.dynamic-popover[hidden] {
+  display: none;
+}
 
 .dynamic-popover {
   position: fixed;

@@ -1,5 +1,6 @@
 import {
   BUILT_IN_PROFILES,
+  INTERNAL_PARAMETERS,
   PHRASE_TEMPLATES,
   addCrescendo,
   addRest,
@@ -10,6 +11,7 @@ import {
   applyPhraseTemplate,
   dynamicCommandFromText,
   removeDynamic,
+  setNoteExpression,
   applySelectedNoteDuration,
   cloneProject,
   computePerformanceNotes,
@@ -79,6 +81,7 @@ document.addEventListener("DOMContentLoaded", () => {
   restoreAutosave();
   populateProfiles();
   populateTemplateButtons();
+  populateNoteExpressionParameters();
   bindEvents();
   render();
 });
@@ -151,10 +154,22 @@ function bindElements() {
     "wizardRefreshButton",
     "wizardApplyButton",
     "dynamicPopover",
-    "dynamicInput"
+    "dynamicInput",
+    "noteExprParameter",
+    "noteExprValue",
+    "noteExprInfluence",
+    "noteExprInfluenceOut",
+    "noteExprApplyButton",
+    "noteExprClearButton"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
+}
+
+function populateNoteExpressionParameters() {
+  els.noteExprParameter.replaceChildren(
+    ...INTERNAL_PARAMETERS.map((parameter) => option(parameter, parameter))
+  );
 }
 
 function openDynamicPopover() {
@@ -282,6 +297,29 @@ function bindEvents() {
   });
   els.dynamicInput.addEventListener("blur", () => {
     if (!els.dynamicPopover.hidden) closeDynamicPopover();
+  });
+  els.noteExprParameter.addEventListener("change", renderInspector);
+  els.noteExprInfluence.addEventListener("input", () => {
+    els.noteExprInfluenceOut.textContent = `${els.noteExprInfluence.value}%`;
+  });
+  els.noteExprInfluence.addEventListener("change", () => {
+    const influence = Number(els.noteExprInfluence.value) / 100;
+    mutate(`Note influence ${els.noteExprInfluence.value}%`, () =>
+      setNoteExpression(project, { influence }));
+  });
+  els.noteExprApplyButton.addEventListener("click", () => {
+    const parameter = els.noteExprParameter.value;
+    const raw = els.noteExprValue.value;
+    if (raw === "") return;
+    const value = Number(raw);
+    const influence = Number(els.noteExprInfluence.value) / 100;
+    mutate(`Note ${parameter} ${value}`, () =>
+      setNoteExpression(project, { parameter, value, influence }));
+  });
+  els.noteExprClearButton.addEventListener("click", () => {
+    const parameter = els.noteExprParameter.value;
+    mutate(`Clear note ${parameter}`, () =>
+      setNoteExpression(project, { parameter, value: null }));
   });
   document.addEventListener("keydown", onKeyDown);
 }
@@ -816,6 +854,19 @@ function renderInspector() {
   setInputMixed(els.velocityInput, velocity);
   if (articulation !== "Mixed" && articulation !== "") els.articulationInput.value = articulation;
   els.articulationInput.title = articulation === "Mixed" ? "Mixed" : "";
+
+  // Note Expression: show the selection's value for the chosen parameter.
+  const parameter = els.noteExprParameter.value;
+  const exprValues = [...new Set(notes.map((note) => note.expression?.[parameter] ?? ""))];
+  setInputMixed(els.noteExprValue, exprValues.length > 1 ? "Mixed" : exprValues[0] ?? "");
+  const influences = [...new Set(notes.map((note) => note.expressionInfluence ?? 1))];
+  if (influences.length === 1 && notes.length > 0) {
+    const percent = Math.round(influences[0] * 100);
+    els.noteExprInfluence.value = String(percent);
+    els.noteExprInfluenceOut.textContent = `${percent}%`;
+  } else if (notes.length > 0) {
+    els.noteExprInfluenceOut.textContent = "Mixed";
+  }
 }
 
 function syncDurationSelect() {

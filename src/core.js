@@ -190,7 +190,7 @@ export function createInitialProject() {
   };
 }
 
-export function createNote({ pitch, scoreTick, durationTicks, articulation = "sustain", velocity = 72, localStartOffsetMs = 0, localEndOffsetMs = 0 }) {
+export function createNote({ pitch, scoreTick, durationTicks, articulation = "sustain", velocity = 72, localStartOffsetMs = 0, localEndOffsetMs = 0, expression = {}, expressionInfluence = 1 }) {
   return {
     id: cryptoRandomId("note"),
     pitch,
@@ -204,7 +204,9 @@ export function createNote({ pitch, scoreTick, durationTicks, articulation = "su
     tiedToNext: false,
     frozenPerformanceTick: null,
     phraseOffsetMs: 0,
-    humanizeMs: 0
+    humanizeMs: 0,
+    expression,
+    expressionInfluence
   };
 }
 
@@ -499,6 +501,36 @@ export function applyDynamic(project, mark) {
   return true;
 }
 
+// Phrase-level curve and note-level expression are independent layers; the
+// output mixes them per note: phrase + (note - phrase) * influence.
+// influence 1.0 = the note's value wins fully, 0.0 = phrase only.
+export function effectiveExpression(project, note, parameter) {
+  const phrase = sampleCurve(project, parameter, note.scoreTick);
+  const noteValue = note.expression?.[parameter];
+  if (noteValue === undefined || noteValue === null) return phrase;
+  const amount = clamp(Number(note.expressionInfluence ?? 1), 0, 1);
+  return clamp(phrase + (clamp(Number(noteValue), 0, 1) - phrase) * amount, 0, 1);
+}
+
+export function setNoteExpression(project, { parameter, value, influence }) {
+  const notes = selectedNotes(project);
+  if (notes.length === 0) return 0;
+  notes.forEach((note) => {
+    if (parameter !== undefined && value !== undefined) {
+      note.expression = note.expression ?? {};
+      if (value === null) {
+        delete note.expression[parameter];
+      } else {
+        note.expression[parameter] = clamp(Number(value), 0, 1);
+      }
+    }
+    if (influence !== undefined) {
+      note.expressionInfluence = clamp(Number(influence), 0, 1);
+    }
+  });
+  return notes.length;
+}
+
 export function removeDynamic(project, dynamicId) {
   const dynamics = project.dynamics ?? [];
   const index = dynamics.findIndex((d) => d.id === dynamicId);
@@ -708,7 +740,7 @@ export function generateCcEvents(project, profile = getProfile(project)) {
       events.push({
         tick: lookAheadTick,
         cc: control.target.cc,
-        value: clamp(Math.round(sampleCurve(project, control.internalParameter, note.scoreTick) * 127), 0, 127),
+        value: clamp(Math.round(effectiveExpression(project, note, control.internalParameter) * 127), 0, 127),
         parameter: control.internalParameter,
         label: control.label,
         noteId: note.id

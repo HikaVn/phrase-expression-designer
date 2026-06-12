@@ -42,6 +42,9 @@ npm test
   `ff`, `<` (cresc.) or `>` (dim.) and press Enter
 - Click an engraved mark to select it (red); Delete/Backspace removes the mark,
   its curve step, and re-derives the affected velocities
+- Two independent expression layers: the phrase curve and per-note values
+  (Note Expression panel). Output mixes them per note with a continuous
+  influence amount — 0% = phrase only, 100% = the note's value wins
 - Hairpins start from the level actually sounding, aim at the next written
   dynamic (or move two steps), and merge into the existing intensity curve
   instead of replacing it

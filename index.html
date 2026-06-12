@@ -201,6 +201,28 @@
           </section>
 
           <section class="inspector-block">
+            <h2>Note Expression</h2>
+            <p class="block-hint">フレーズの線とは独立した、音符ごとの値。出力時に影響度で合成。</p>
+            <div class="property-row wide-row">
+              <label for="noteExprParameter">Parameter</label>
+              <select id="noteExprParameter"></select>
+            </div>
+            <div class="property-row wide-row">
+              <label for="noteExprValue">Value (0–1)</label>
+              <input id="noteExprValue" type="number" min="0" max="1" step="0.05">
+            </div>
+            <div class="influence-row">
+              <label for="noteExprInfluence">影響度</label>
+              <input id="noteExprInfluence" type="range" min="0" max="100" step="1" value="100">
+              <output id="noteExprInfluenceOut">100%</output>
+            </div>
+            <div class="timing-actions">
+              <button id="noteExprApplyButton" type="button">適用</button>
+              <button id="noteExprClearButton" type="button">この値を解除</button>
+            </div>
+          </section>
+
+          <section class="inspector-block">
             <h2>Validation</h2>
             <ul id="validationList" class="validation-list"></ul>
           </section>

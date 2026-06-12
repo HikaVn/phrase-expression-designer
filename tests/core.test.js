@@ -15,6 +15,7 @@ import {
   deleteSelection,
   dynamicCommandFromText,
   dynamicValue,
+  effectiveExpression,
   exportMidi,
   generateCcEvents,
   generateMidiEventList,
@@ -30,6 +31,7 @@ import {
   pasteSelection,
   moveCurvePoint,
   setFrozenPerformanceTick,
+  setNoteExpression,
   toggleTie,
   tickToMs,
   upsertCurvePoint,
@@ -416,4 +418,62 @@ test("removeDynamic deletes the mark, its curve step, and re-derives velocities"
   // Velocities behind the deleted mark follow the remaining curve again.
   assert.equal(project.notes[2].velocity, velocityForDynamic(dynamicValue("p")));
   assert.equal(removeDynamic(project, "missing"), false);
+});
+
+test("effectiveExpression mixes phrase and note layers by influence", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = {
+    parameter: "intensity",
+    points: [{ tick: 0, value: 0.4 }]
+  };
+  const note = project.notes[0]; // scoreTick 0 -> phrase value 0.4
+  note.expression = { intensity: 0.8 };
+
+  note.expressionInfluence = 1;
+  assert.equal(effectiveExpression(project, note, "intensity"), 0.8);
+  note.expressionInfluence = 0.5;
+  assert.ok(Math.abs(effectiveExpression(project, note, "intensity") - 0.6) < 1e-9);
+  note.expressionInfluence = 0;
+  assert.equal(effectiveExpression(project, note, "intensity"), 0.4);
+  // Without a note-level value the phrase wins regardless of influence.
+  assert.equal(effectiveExpression(project, note, "timbre"),
+    sampleCurve(project, "timbre", 0));
+});
+
+test("setNoteExpression writes and clears values on the selection", () => {
+  const project = createInitialProject();
+  project.selectedIds = [project.notes[0].id, project.notes[1].id];
+  assert.equal(setNoteExpression(project, { parameter: "timbre", value: 0.9, influence: 0.5 }), 2);
+  assert.equal(project.notes[0].expression.timbre, 0.9);
+  assert.equal(project.notes[1].expressionInfluence, 0.5);
+  setNoteExpression(project, { parameter: "timbre", value: null });
+  assert.equal(project.notes[0].expression.timbre, undefined);
+});
+
+test("generated CC events reflect the note layer at its influence", () => {
+  const project = createInitialProject();
+  project.profileId = "opus_hollywood_strings";
+  project.expressionCurves.intensity = {
+    parameter: "intensity",
+    points: [{ tick: 0, value: 0.4 }]
+  };
+  const ccFor = () => generateCcEvents(project)
+    .find((e) => e.parameter === "intensity" && e.noteId === project.notes[0].id).value;
+  const phraseOnly = ccFor();
+  project.notes[0].expression = { intensity: 1 };
+  project.notes[0].expressionInfluence = 1;
+  const full = ccFor();
+  project.notes[0].expressionInfluence = 0.5;
+  const half = ccFor();
+  assert.equal(phraseOnly, Math.round(0.4 * 127));
+  assert.equal(full, 127);
+  assert.ok(phraseOnly < half && half < full);
+});
+
+test("notes without note-level expression export exactly as before", () => {
+  const project = createInitialProject();
+  delete project.notes[0].expression; // simulate a project saved by an older version
+  delete project.notes[0].expressionInfluence;
+  const cc = generateCcEvents(project).find((e) => e.noteId === project.notes[0].id);
+  assert.equal(cc.value, Math.round(sampleCurve(project, cc.parameter, 0) * 127));
 });
