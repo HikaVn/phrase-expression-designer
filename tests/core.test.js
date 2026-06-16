@@ -709,6 +709,38 @@ test("interpretation leaves frozen notes pinned", () => {
   assert.equal(performance[3].performanceStartTick, 2000);
 });
 
+test("interpretation accents strong beats louder than offbeats (velocityDelta)", () => {
+  const project = createInitialProject();
+  project.notes = [
+    createNote({ pitch: 60, scoreTick: 0, durationTicks: 480 }),   // downbeat
+    createNote({ pitch: 60, scoreTick: 480, durationTicks: 480 })  // offbeat
+  ];
+  // Isolate the metrical accent: no arch, no jitter.
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true, swell: 0, humanizeVel: 0 };
+  const map = computeInterpretation(project);
+  assert.ok(map.get(project.notes[0].id).velocityDelta > 0, "downbeat is lifted");
+  assert.ok(map.get(project.notes[1].id).velocityDelta < 0, "offbeat is softened");
+  assert.ok(map.get(project.notes[0].id).velocityDelta > map.get(project.notes[1].id).velocityDelta);
+});
+
+test("performanceVelocity inflects output without touching the notated velocity", () => {
+  const project = createInitialProject();
+  project.notes = [createNote({ pitch: 60, scoreTick: 0, durationTicks: 480, velocity: 70 })];
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true, swell: 0, humanizeVel: 0 };
+  const perf = computePerformanceNotes(project, BUILT_IN_PROFILES[0]);
+  assert.ok(perf[0].performanceVelocity > 70, "downbeat accent raises the played velocity");
+  assert.equal(project.notes[0].velocity, 70, "the score velocity is unchanged");
+  // And the MIDI note-on carries the performance velocity.
+  const noteOn = generateMidiEventList(project, BUILT_IN_PROFILES[0]).find((e) => e.type === "noteOn");
+  assert.equal(noteOn.bytes[2], perf[0].performanceVelocity);
+});
+
+test("performanceVelocity equals the notated velocity when interpretation is off", () => {
+  const project = createInitialProject();
+  const perf = computePerformanceNotes(project, BUILT_IN_PROFILES[0]);
+  assert.deepEqual(perf.map((n) => n.performanceVelocity), project.notes.map((n) => n.velocity));
+});
+
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {
   const profile = buildEngineProfile("kontakt");
   assert.ok(profile.controls.every((control) => control.target.type === "midiLearnRequired"));

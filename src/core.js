@@ -368,6 +368,9 @@ export const DEFAULT_INTERPRETATION = {
   apexTenutoMs: 60, // lengthen the phrase apex (peak) note
   finalRelaxMs: 30, // relax (delay) the phrase-final note
   humanizeMs: 8,    // deterministic +/- onset jitter ("alive", reproducible)
+  swell: 12,        // velocity arch depth: lift toward the apex, ease the edges
+  accent: 8,        // metrical accent: strong beats louder, offbeats softer
+  humanizeVel: 4,   // deterministic +/- velocity jitter
   seed: 1
 };
 
@@ -1041,7 +1044,8 @@ function segmentPhrases(notes) {
 }
 
 // The performer's micro-decisions, derived from the score. Returns a map of
-// noteId -> { onsetMs, durationMs } nudges. Pure; does not mutate the project.
+// noteId -> { onsetMs, durationMs, velocityDelta } nudges. Pure; does not
+// mutate the project.
 export function computeInterpretation(project, settings = project.interpretation) {
   const result = new Map();
   if (!settings || !settings.enabled) return result;
@@ -1051,13 +1055,19 @@ export function computeInterpretation(project, settings = project.interpretation
   const apexTenutoMs = (settings.apexTenutoMs ?? 0) * amount;
   const finalRelaxMs = (settings.finalRelaxMs ?? 0) * amount;
   const humanizeMs = (settings.humanizeMs ?? 0) * amount;
+  const swell = settings.swell ?? 0;
+  const accent = settings.accent ?? 0;
+  const humanizeVel = settings.humanizeVel ?? 0;
+  const ticksPerBar = project.ppq * 4;
+  const beatTol = project.ppq / 16;
   const rng = mulberry32(settings.seed ?? 1);
   segmentPhrases(project.notes).forEach((phrase, phraseIndex) => {
     // Apex = the phrase's peak: highest pitch, breaking ties toward the louder
     // (then earlier) note — the note a player naturally leans on.
-    let apex = phrase[0];
-    phrase.forEach((note) => {
-      if (note.pitch > apex.pitch || (note.pitch === apex.pitch && (note.velocity ?? 0) > (apex.velocity ?? 0))) apex = note;
+    let apexIndex = 0;
+    phrase.forEach((note, index) => {
+      const apex = phrase[apexIndex];
+      if (note.pitch > apex.pitch || (note.pitch === apex.pitch && (note.velocity ?? 0) > (apex.velocity ?? 0))) apexIndex = index;
     });
     phrase.forEach((note, index) => {
       let onsetMs = 0;
@@ -1067,12 +1077,40 @@ export function computeInterpretation(project, settings = project.interpretation
         onsetMs += finalRelaxMs;
         durationMs += apexTenutoMs * 0.5;
       }
-      if (note === apex) durationMs += apexTenutoMs;                  // agogic lean on the peak
-      onsetMs += (rng() * 2 - 1) * humanizeMs;                        // human imperfection
-      result.set(note.id, { onsetMs, durationMs });
+      if (index === apexIndex) durationMs += apexTenutoMs;            // agogic lean on the peak
+      onsetMs += (rng() * 2 - 1) * humanizeMs;                        // human onset imperfection
+
+      // Velocity: a phrase arch (peak at the apex, eased at the edges) plus a
+      // metrical accent (strong beats louder, offbeats softer) plus jitter.
+      const arch = swell * (archShape(index, apexIndex, phrase.length) - 0.5);
+      const metric = metricalAccent(note.scoreTick, ticksPerBar, project.ppq, beatTol, accent);
+      const velJitter = (rng() * 2 - 1) * humanizeVel;
+      const velocityDelta = (arch + metric + velJitter) * amount;
+
+      result.set(note.id, { onsetMs, durationMs, velocityDelta });
     });
   });
   return result;
+}
+
+// Phrase-arch weight in [0,1]: 1 at the apex, ramping from the phrase edges.
+function archShape(index, apexIndex, length) {
+  if (length <= 1 || index === apexIndex) return 1;
+  if (index < apexIndex) return apexIndex === 0 ? 1 : index / apexIndex;
+  const tail = length - 1 - apexIndex;
+  return tail === 0 ? 1 : (length - 1 - index) / tail;
+}
+
+// Metrical accent in velocity units: downbeat strongest, beat 3 next, other
+// beats slightly accented, offbeats slightly softened.
+function metricalAccent(scoreTick, ticksPerBar, ppq, beatTol, accent) {
+  const inBar = ((scoreTick % ticksPerBar) + ticksPerBar) % ticksPerBar;
+  const beatIndex = Math.round(inBar / ppq);
+  const onBeat = Math.abs(inBar - beatIndex * ppq) <= beatTol;
+  if (!onBeat) return -accent * 0.25;
+  if (beatIndex % 4 === 0) return accent;
+  if (beatIndex % 4 === 2) return accent * 0.5;
+  return accent * 0.25;
 }
 
 export function computePerformanceNotes(project, profile = getProfile(project)) {
@@ -1081,7 +1119,7 @@ export function computePerformanceNotes(project, profile = getProfile(project)) 
     const art = getArticulation(profile, note.articulation);
     const performance = art?.performance ?? {};
     // Frozen (user-pinned) notes opt out of interpretation.
-    const interp = (note.frozenPerformanceTick == null && interpretation.get(note.id)) || { onsetMs: 0, durationMs: 0 };
+    const interp = (note.frozenPerformanceTick == null && interpretation.get(note.id)) || { onsetMs: 0, durationMs: 0, velocityDelta: 0 };
     const offsetMs =
       (profile.timing?.trackOffsetMs ?? 0) +
       (project.trackTimingOffsetMs ?? 0) +
@@ -1094,7 +1132,8 @@ export function computePerformanceNotes(project, profile = getProfile(project)) 
     const overlapMs = art?.type === "legato" ? Math.min((tickToMs(note.durationTicks, [{ tick: 0, bpm: bpmAtTick(note.scoreTick, project.tempoMap) }], project.ppq) * (performance.overlapPercent ?? 0)) / 100, performance.overlapMaxMs ?? 0) : 0;
     const endOffsetTick = msToTick((note.localEndOffsetMs ?? 0) + overlapMs + (note.localDurationOffsetMs ?? 0) + interp.durationMs, project.tempoMap, project.ppq, note.scoreTick + note.durationTicks);
     const durationTicks = Math.max(1, note.durationTicks + endOffsetTick);
-    return { ...note, performanceStartTick: Math.max(0, startTick), performanceDurationTicks: durationTicks, articulationName: art?.name ?? note.articulation };
+    const performanceVelocity = clamp(Math.round((note.velocity ?? 72) + interp.velocityDelta), 1, 127);
+    return { ...note, performanceStartTick: Math.max(0, startTick), performanceDurationTicks: durationTicks, performanceVelocity, articulationName: art?.name ?? note.articulation };
   });
 }
 
@@ -1209,14 +1248,15 @@ export function generateMidiEventList(project, profile = getProfile(project)) {
         bytes: [0xb0, ccEvent.cc, ccEvent.value]
       });
     });
+    const velocity = note.performanceVelocity ?? note.velocity;
     events.push({
       tick: note.performanceStartTick,
       type: "noteOn",
       source: note.articulationName,
-      detail: `${pitchName(note.pitch, profile.noteNaming)} velocity ${note.velocity}`,
+      detail: `${pitchName(note.pitch, profile.noteNaming)} velocity ${velocity}`,
       priority: 4,
       noteId: note.id,
-      bytes: [0x90, note.pitch, note.velocity]
+      bytes: [0x90, note.pitch, velocity]
     });
     events.push({
       tick: note.performanceStartTick + note.performanceDurationTicks,

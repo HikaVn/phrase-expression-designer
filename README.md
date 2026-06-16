@@ -61,8 +61,11 @@ npm test
 - Interpretation engine (the "retained performer"): an optional, steerable
   layer that derives a player's micro-decisions from the score — phrase-apex
   agogic lengthening, a breath before each new phrase, phrase-final relaxation,
-  and deterministic (reproducible) human timing jitter. It writes timing/
-  duration nudges on top of the score (the notation is never altered),
+  deterministic (reproducible) human timing jitter, plus velocity inflection (a
+  phrase arch that swells toward the apex and eases at the edges, metrical
+  accents that lift strong beats and soften offbeats, and velocity jitter). It
+  writes timing/duration/velocity nudges on top of the score (the notation is
+  never altered — the played velocity is a separate `performanceVelocity`),
   recomputes live as you edit, opts out of frozen notes, and is driven by a
   single strength dial (off by default). Flows straight into the piano roll,
   MIDI export, and live output
