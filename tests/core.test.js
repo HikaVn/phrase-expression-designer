@@ -18,6 +18,7 @@ import {
   applySelectedNoteDuration,
   computePerformanceNotes,
   computeInterpretation,
+  createDemoPhraseProject,
   DEFAULT_INTERPRETATION,
   copySelection,
   createNote,
@@ -814,6 +815,23 @@ test("default profiles keep linear CC output (dynamic_default is identity)", () 
   const cc = generateCcEvents(project, BUILT_IN_PROFILES[0]).find((e) => e.parameter === "intensity");
   assert.equal(cc.value, Math.round(0.6 * 127));
 });
+
+test("createDemoPhraseProject is a valid, interpretable A/B subject", () => {
+  const project = createDemoPhraseProject();
+  assert.ok(project.notes.length >= 6);
+  assert.equal(project.interpretation.enabled, true);
+  assert.equal(validateProfile(getProfileForDemo(project)).filter((m) => m.level === "Error").length, 0);
+  const perf = computePerformanceNotes(project);
+  assert.equal(perf.length, project.notes.length);
+  assert.ok(generateMidiEventList(project).some((e) => e.type === "noteOn"));
+  // interpretation actually changes the rendered performance for this phrase
+  const off = computePerformanceNotes({ ...project, interpretation: { ...DEFAULT_INTERPRETATION, enabled: false } });
+  assert.ok(perf.some((n, i) => n.performanceStartTick !== off[i].performanceStartTick || n.performanceVelocity !== off[i].performanceVelocity));
+});
+
+function getProfileForDemo(project) {
+  return BUILT_IN_PROFILES.find((p) => p.id === project.profileId) ?? BUILT_IN_PROFILES[0];
+}
 
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {
   const profile = buildEngineProfile("kontakt");

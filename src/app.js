@@ -28,6 +28,7 @@ import {
   computePerformanceNotes,
   copySelection,
   createInitialProject,
+  createDemoPhraseProject,
   createSetupReport,
   createTestProject,
   deleteCurvePoint,
@@ -74,6 +75,7 @@ let midiAccess = null;
 let midiOutput = null;
 let playbackTimer = null;
 let isPlaying = false;
+let loopEnabled = false;
 let interpDialEls = {};
 const PLAYBACK_LEAD_MS = 120;
 const AUTOSAVE_KEY = "phraseExpressionDesigner.autosave.v1";
@@ -146,6 +148,9 @@ function bindElements() {
     "midiOutputSelect",
     "playButton",
     "stopButton",
+    "loopToggle",
+    "testToneButton",
+    "demoButton",
     "midiStatusOutput",
     "cursorOutput",
     "selectionOutput",
@@ -308,6 +313,11 @@ function bindEvents() {
   });
   els.playButton.addEventListener("click", startLivePlayback);
   els.stopButton.addEventListener("click", stopLivePlayback);
+  els.loopToggle.addEventListener("change", () => {
+    loopEnabled = els.loopToggle.checked;
+  });
+  els.testToneButton.addEventListener("click", sendTestTone);
+  els.demoButton.addEventListener("click", loadDemoPhrase);
   els.profileSelect.addEventListener("change", () => mutate("Change profile", () => {
     project.profileId = els.profileSelect.value;
     normalizeArticulationsForProfile();
@@ -1739,12 +1749,16 @@ function downloadMidi(targetProject, filename) {
 // port (e.g. an IAC bus into Logic) so a real instrument sounds them. This is
 // the feedback loop — the body (sampler) lives outside, the brain here.
 
+function disableMidiControls() {
+  [els.midiOutputSelect, els.playButton, els.stopButton, els.loopToggle, els.testToneButton].forEach((el) => {
+    if (el) el.disabled = true;
+  });
+}
+
 async function initMidi() {
   if (!navigator.requestMIDIAccess) {
     els.midiStatusOutput.textContent = "Web MIDI非対応(Chrome系/localhost)";
-    els.midiOutputSelect.disabled = true;
-    els.playButton.disabled = true;
-    els.stopButton.disabled = true;
+    disableMidiControls();
     return;
   }
   try {
@@ -1753,9 +1767,7 @@ async function initMidi() {
     populateMidiOutputs();
   } catch (error) {
     els.midiStatusOutput.textContent = "MIDIアクセス不可";
-    els.midiOutputSelect.disabled = true;
-    els.playButton.disabled = true;
-    els.stopButton.disabled = true;
+    disableMidiControls();
   }
 }
 
@@ -1782,9 +1794,19 @@ function startLivePlayback() {
     return;
   }
   stopLivePlayback();
+  isPlaying = true;
+  els.playButton.classList.add("active");
+  scheduleCycle();
+}
+
+// Schedule one pass; when looping, re-generate from the current project each
+// cycle so tweaking the dials / interpretation toggle is heard on the next loop.
+function scheduleCycle() {
+  if (!isPlaying || !midiOutput) return;
   const messages = generatePlaybackMessages(project, activeProfile());
   if (messages.length === 0) {
     els.midiStatusOutput.textContent = "再生するイベントがありません";
+    stopLivePlayback();
     return;
   }
   const startAt = performance.now() + PLAYBACK_LEAD_MS;
@@ -1793,10 +1815,13 @@ function startLivePlayback() {
     midiOutput.send(message.bytes, startAt + message.timeMs);
     endMs = Math.max(endMs, message.timeMs);
   });
-  isPlaying = true;
-  els.playButton.classList.add("active");
-  els.midiStatusOutput.textContent = "再生中…";
-  playbackTimer = setTimeout(stopLivePlayback, PLAYBACK_LEAD_MS + endMs + 250);
+  els.midiStatusOutput.textContent = loopEnabled ? "ループ再生中…" : "再生中…";
+  const total = PLAYBACK_LEAD_MS + endMs;
+  if (loopEnabled) {
+    playbackTimer = setTimeout(scheduleCycle, total + 350); // small luft between loops
+  } else {
+    playbackTimer = setTimeout(stopLivePlayback, total + 250);
+  }
 }
 
 function stopLivePlayback() {
@@ -1814,6 +1839,27 @@ function stopLivePlayback() {
   }
   isPlaying = false;
   els.playButton.classList.remove("active");
+}
+
+// Send a single note to confirm the IAC -> Logic routing works before judging
+// any music. Independent of the transport.
+function sendTestTone() {
+  if (!midiOutput) {
+    els.midiStatusOutput.textContent = "出力先を選択してください";
+    return;
+  }
+  const now = performance.now();
+  midiOutput.send([0x90, 60, 90], now + 20);
+  midiOutput.send([0x80, 60, 0], now + 520);
+  els.midiStatusOutput.textContent = "テスト音を送出 (C4)";
+}
+
+function loadDemoPhrase() {
+  mutate("Load demo phrase", () => {
+    const profileId = project.profileId;
+    project = createDemoPhraseProject(profileId);
+  }, { replaceProject: true });
+  els.statusText.textContent = "デモ譜を読み込みました（解釈ON）。Live MIDIで▶、解釈チェックやループ・内訳ダイヤルで聴き比べてください。";
 }
 
 function downloadJson(data, filename) {

@@ -87,7 +87,14 @@ npm test
 - Live MIDI output (Web MIDI): stream the generated events in real time to an
   external MIDI port (e.g. an IAC bus into Logic) so a real instrument sounds
   them — the app itself stays silent. Play/Stop transport with all-notes-off on
-  stop. Requires Chrome/Edge over https or localhost
+  stop, a **Loop** mode that re-generates each cycle (so dial/interpretation
+  tweaks are heard on the next pass — live A/B tuning), and a **test-tone**
+  button to confirm routing before judging. Requires Chrome/Edge over https or
+  localhost
+- Demo phrase (`デモ譜`): one click loads a lyrical two-phrase line built to
+  show off the interpretation engine (legato ascent → apex leap → breath →
+  falling answer, with an intensity arch), interpretation on — a consistent
+  subject for the ear A/B
 - MIDI Event Preview with final tempo, keyswitch, CC, and note events
 - MIDI import support for tempo changes and common CC expression curves
 - Project JSON save/load

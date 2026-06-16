@@ -248,6 +248,21 @@ textarea:focus {
   font-size: 12px;
 }
 
+.loop-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.loop-label input {
+  accent-color: var(--accent);
+}
+
 .interp-details summary {
   cursor: pointer;
   font-size: 12px;

@@ -19,6 +19,7 @@
             Project読込
           </label>
           <button id="exportProjectButton" type="button">Project保存</button>
+          <button id="demoButton" type="button" title="試聴用デモ譜を読み込む（解釈ON）">デモ譜</button>
           <label class="file-button">
             <input id="midiImportInput" type="file" accept=".mid,.midi,audio/midi">
             MIDI読込
@@ -110,6 +111,8 @@
               <select id="midiOutputSelect" aria-label="MIDI出力先"></select>
               <button id="playButton" type="button" title="再生（外部音源へ送出）">▶</button>
               <button id="stopButton" type="button" title="停止">■</button>
+              <label class="loop-label"><input id="loopToggle" type="checkbox"> Loop</label>
+              <button id="testToneButton" type="button" title="テスト音(C4)を送出し配線を確認">テスト音</button>
               <output id="midiStatusOutput">—</output>
             </div>
           </section>

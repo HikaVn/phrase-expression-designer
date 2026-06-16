@@ -1451,6 +1451,40 @@ export function createTestProject(profileId) {
   return project;
 }
 
+// A lyrical two-phrase line built to show off the interpretation engine for
+// ear-checking: a legato ascent leaping to an apex, a phrase break (rest),
+// then a falling answer — with an intensity arch so CC moves too. Ships with
+// interpretation on so A/B is one toggle away.
+export function createDemoPhraseProject(profileId = "opus_hollywood_strings") {
+  const project = createInitialProject();
+  project.profileId = profileId;
+  project.title = "Demo Phrase";
+  project.notes = [
+    createNote({ pitch: 64, scoreTick: 0, durationTicks: 960, articulation: "legato", velocity: 64 }),
+    createNote({ pitch: 67, scoreTick: 960, durationTicks: 960, articulation: "legato", velocity: 70 }),
+    createNote({ pitch: 72, scoreTick: 1920, durationTicks: 960, articulation: "legato", velocity: 82 }), // leap to apex
+    createNote({ pitch: 71, scoreTick: 2880, durationTicks: 480, articulation: "legato", velocity: 74 }),
+    // breath: rest 3360..3840
+    createNote({ pitch: 69, scoreTick: 3840, durationTicks: 960, articulation: "legato", velocity: 70 }),
+    createNote({ pitch: 67, scoreTick: 4800, durationTicks: 960, articulation: "legato", velocity: 66 }),
+    createNote({ pitch: 64, scoreTick: 5760, durationTicks: 1920, articulation: "legato", velocity: 60 })
+  ];
+  project.rests = [{ id: cryptoRandomId("rest"), scoreTick: 3360, durationTicks: 480 }];
+  project.slurs = [
+    { id: cryptoRandomId("slur"), startNoteId: project.notes[0].id, endNoteId: project.notes[3].id },
+    { id: cryptoRandomId("slur"), startNoteId: project.notes[4].id, endNoteId: project.notes[6].id }
+  ];
+  project.crescendos = [];
+  project.dynamics = [];
+  project.expressionCurves = {
+    intensity: { parameter: "intensity", points: [{ tick: 0, value: 0.32 }, { tick: 1920, value: 0.82 }, { tick: 3360, value: 0.5 }, { tick: 5760, value: 0.6 }, { tick: 7680, value: 0.25 }] },
+    volume: { parameter: "volume", points: [{ tick: 0, value: 0.45 }, { tick: 1920, value: 0.72 }, { tick: 7680, value: 0.4 }] }
+  };
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true };
+  project.cursorTick = 7680;
+  return project;
+}
+
 export function exportMidi(project, profile = getProfile(project)) {
   const events = generateMidiEventList(project, profile);
   const track = buildTrack(events);
