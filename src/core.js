@@ -156,6 +156,46 @@ function learnControl(internalParameter, label, suggestedCC) {
   return { internalParameter, label, target: { type: "midiLearnRequired", suggestedCC }, enabled: true };
 }
 
+// Calibration curves map an internal value (0..1) to a CC output (0..1) before
+// the ×127. Real libraries respond non-linearly, so "intensity 0.6" only means
+// the same musical loudness once calibrated. `dynamic_default` is the per-
+// instrument slot a profile can override in its own `calibration` array; the
+// shared built-in default is identity (linear), so behaviour is unchanged until
+// a real shape is assigned.
+export const BUILT_IN_CALIBRATION_CURVES = [
+  { id: "linear", name: "Linear", points: [{ in: 0, out: 0 }, { in: 1, out: 1 }] },
+  { id: "dynamic_default", name: "Default (linear)", points: [{ in: 0, out: 0 }, { in: 1, out: 1 }] },
+  { id: "s_curve", name: "Dynamic S-curve", points: [{ in: 0, out: 0 }, { in: 0.25, out: 0.16 }, { in: 0.5, out: 0.5 }, { in: 0.75, out: 0.84 }, { in: 1, out: 1 }] },
+  { id: "soft", name: "Soft (low boost)", points: [{ in: 0, out: 0 }, { in: 0.5, out: 0.64 }, { in: 1, out: 1 }] },
+  { id: "firm", name: "Firm (low cut)", points: [{ in: 0, out: 0 }, { in: 0.5, out: 0.36 }, { in: 1, out: 1 }] }
+];
+
+// Resolve a curve id: a profile's own calibration overrides the shared built-in
+// (so an instrument can calibrate its `dynamic_default`); unknown ids => null.
+export function getCalibrationCurve(profile, id) {
+  if (!id) return null;
+  const fromProfile = Array.isArray(profile?.calibration) ? profile.calibration.find((curve) => curve.id === id) : null;
+  return fromProfile ?? BUILT_IN_CALIBRATION_CURVES.find((curve) => curve.id === id) ?? null;
+}
+
+// Piecewise-linear curve application; identity when there is no usable curve.
+export function applyCalibration(curve, value) {
+  const x = clamp(Number(value), 0, 1);
+  const points = Array.isArray(curve?.points) && curve.points.length ? [...curve.points].sort((a, b) => a.in - b.in) : null;
+  if (!points) return x;
+  if (x <= points[0].in) return clamp(points[0].out, 0, 1);
+  if (x >= points[points.length - 1].in) return clamp(points[points.length - 1].out, 0, 1);
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (x >= a.in && x <= b.in) {
+      const t = b.in === a.in ? 0 : (x - a.in) / (b.in - a.in);
+      return clamp(a.out + (b.out - a.out) * t, 0, 1);
+    }
+  }
+  return x;
+}
+
 // Engine-specific Setup Wizards. Each wizard carries a richer preset *menu*
 // than the shipped built-in profiles: the user picks which articulations and
 // controls their patch actually has, and the wizard builds a validated profile
@@ -1195,10 +1235,13 @@ export function generateCcEvents(project, profile = getProfile(project)) {
   performanceNotes.forEach((note) => {
     profile.controls.filter((control) => control.enabled && control.target?.type === "midiCC").forEach((control) => {
       const lookAheadTick = Math.max(0, note.performanceStartTick - msToTickPrecise(profile.timing?.ccLookAheadMs ?? 80, project.tempoMap, project.ppq, note.performanceStartTick));
+      const raw = effectiveExpression(project, note, control.internalParameter);
+      const curve = getCalibrationCurve(profile, control.calibrationCurveId);
+      const calibrated = curve ? applyCalibration(curve, raw) : raw;
       events.push({
         tick: lookAheadTick,
         cc: control.target.cc,
-        value: clamp(Math.round(effectiveExpression(project, note, control.internalParameter) * 127), 0, 127),
+        value: clamp(Math.round(calibrated * 127), 0, 127),
         parameter: control.internalParameter,
         label: control.label,
         noteId: note.id
@@ -1342,6 +1385,9 @@ export function validateProfile(profile) {
       const existing = ccByParam.get(control.internalParameter);
       if (existing !== undefined && existing !== target.cc) messages.push(error(`Internal parameter has competing CC assignments: ${control.internalParameter}`));
       ccByParam.set(control.internalParameter, target.cc);
+      if (control.calibrationCurveId && !getCalibrationCurve(profile, control.calibrationCurveId)) {
+        messages.push(warn(`Unknown calibration curve: ${control.label} -> ${control.calibrationCurveId}`));
+      }
     }
     if (target.type === "midiLearnRequired") messages.push(warn(`MIDI Learn required: ${control.label} suggested CC${target.suggestedCC}`));
     if (target.type === "manual" || target.type === "unsupported" || target.type === "hostAutomation") messages.push(warn(`Not directly exported to MIDI: ${control.label} (${target.type})`));

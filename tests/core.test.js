@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BUILT_IN_PROFILES,
+  BUILT_IN_CALIBRATION_CURVES,
+  getCalibrationCurve,
+  applyCalibration,
   ENGINE_WIZARDS,
   engineWizardById,
   buildEngineProfile,
@@ -766,6 +769,50 @@ test("legato reach does not apply to non-legato articulations", () => {
   project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true, humanizeMs: 0 };
   const map = computeInterpretation(project, project.interpretation, BUILT_IN_PROFILES[0]);
   assert.equal(map.get(project.notes[1].id).onsetMs, 0); // mid-phrase, sustain -> no reach
+});
+
+test("applyCalibration is identity without a curve, and interpolates with one", () => {
+  assert.equal(applyCalibration(null, 0.3), 0.3);
+  assert.equal(applyCalibration({ points: [] }, 0.3), 0.3);
+  const linear = getCalibrationCurve(null, "linear");
+  assert.equal(applyCalibration(linear, 0.42), 0.42);
+  const s = getCalibrationCurve(null, "s_curve");
+  assert.ok(applyCalibration(s, 0.25) < 0.25, "s-curve attenuates the low input");
+  assert.equal(applyCalibration(s, 0.5), 0.5);
+  // clamps out of range
+  assert.equal(applyCalibration(linear, 2), 1);
+  assert.equal(applyCalibration(linear, -1), 0);
+});
+
+test("getCalibrationCurve resolves built-ins; profile calibration overrides", () => {
+  assert.equal(getCalibrationCurve(null, "nope"), null);
+  assert.equal(getCalibrationCurve({}, "s_curve").id, "s_curve");
+  // built-in dynamic_default is identity (no behaviour change by default)
+  assert.equal(applyCalibration(getCalibrationCurve({}, "dynamic_default"), 0.4), 0.4);
+  // a profile can override the shared default slot with its own shape
+  const profile = { calibration: [{ id: "dynamic_default", points: [{ in: 0, out: 1 }, { in: 1, out: 1 }] }] };
+  assert.equal(applyCalibration(getCalibrationCurve(profile, "dynamic_default"), 0), 1);
+  assert.ok(BUILT_IN_CALIBRATION_CURVES.some((c) => c.id === "soft" && c.id === "soft"));
+});
+
+test("calibration curve reshapes CC output when assigned to a control", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = { parameter: "intensity", points: [{ tick: 0, value: 0.25 }] };
+  const profile = structuredClone(BUILT_IN_PROFILES[0]);
+  const intensity = profile.controls.find((c) => c.internalParameter === "intensity");
+  intensity.calibrationCurveId = "linear";
+  const linearVal = generateCcEvents(project, profile).find((e) => e.parameter === "intensity").value;
+  intensity.calibrationCurveId = "s_curve";
+  const sVal = generateCcEvents(project, profile).find((e) => e.parameter === "intensity").value;
+  assert.equal(linearVal, Math.round(0.25 * 127));
+  assert.ok(sVal < linearVal, "the s-curve pulls the low input down");
+});
+
+test("default profiles keep linear CC output (dynamic_default is identity)", () => {
+  const project = createInitialProject();
+  project.expressionCurves.intensity = { parameter: "intensity", points: [{ tick: 0, value: 0.6 }] };
+  const cc = generateCcEvents(project, BUILT_IN_PROFILES[0]).find((e) => e.parameter === "intensity");
+  assert.equal(cc.value, Math.round(0.6 * 127));
 });
 
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {

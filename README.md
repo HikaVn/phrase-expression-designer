@@ -92,6 +92,13 @@ npm test
 - MIDI import support for tempo changes and common CC expression curves
 - Project JSON save/load
 - Browser auto-save and restore
+- Calibration curves: a control's internal value (0–1) is mapped through a
+  named curve before the ×127, so a library's non-linear CC response can be
+  matched (built-in `linear`, `s_curve`, `soft`, `firm`; the per-instrument
+  `dynamic_default` slot is identity until a profile overrides it in its own
+  `calibration` array). Assigned per midiCC control (6th wizard column);
+  unknown curve ids are flagged in validation. Default profiles stay linear, so
+  existing output is unchanged
 - Instrument Profile JSON import/export
 - Built-in Opus, 8Dio/Kontakt, and Logic Preset instrument profiles
 - Engine-specific Setup Wizards (EastWest Opus / Kontakt·8Dio / Logic): pick an

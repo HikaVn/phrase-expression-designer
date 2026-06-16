@@ -568,7 +568,8 @@ function controlsToText(controls) {
   return (controls ?? []).map((control) => {
     const target = control.target ?? { type: "manual" };
     const value = target.type === "midiCC" ? target.cc : target.suggestedCC ?? "";
-    return [control.internalParameter, control.label, target.type, value, control.enabled === false ? "off" : "on"].join("\t");
+    const calibration = target.type === "midiCC" ? (control.calibrationCurveId ?? "") : "";
+    return [control.internalParameter, control.label, target.type, value, control.enabled === false ? "off" : "on", calibration].join("\t");
   }).join("\n");
 }
 
@@ -1864,18 +1865,20 @@ function parseWizardControls(text) {
   const rows = parseRows(text);
   if (rows.length === 0) throw new Error("Controlsが空です。");
   return rows.map((cols, index) => {
-    const [internalParameter, label, targetType = "manual", value = "", enabled = "on"] = cols;
+    const [internalParameter, label, targetType = "manual", value = "", enabled = "on", calibration = ""] = cols;
     if (!internalParameter || !label) throw new Error(`Controls ${index + 1}行目のinternalParameter/labelが不足しています。`);
     const target = { type: targetType };
     if (targetType === "midiCC") target.cc = Number(value);
     if (targetType === "midiLearnRequired") target.suggestedCC = value === "" ? undefined : Number(value);
     if (targetType === "manual" || targetType === "unsupported") target.reason = "Confirm this target manually.";
-    return {
+    const control = {
       internalParameter,
       label,
       target,
       enabled: enabled.toLowerCase() !== "off"
     };
+    if (targetType === "midiCC") control.calibrationCurveId = calibration.trim() || "dynamic_default";
+    return control;
   });
 }
 
