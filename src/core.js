@@ -156,6 +156,206 @@ function learnControl(internalParameter, label, suggestedCC) {
   return { internalParameter, label, target: { type: "midiLearnRequired", suggestedCC }, enabled: true };
 }
 
+// Engine-specific Setup Wizards. Each wizard carries a richer preset *menu*
+// than the shipped built-in profiles: the user picks which articulations and
+// controls their patch actually has, and the wizard builds a validated profile
+// with engine-correct note naming, ranges, timing, and (for keyswitch engines)
+// automatically numbered keyswitch slots.
+function artPreset(id, name, type, performance = {}, trigger = { type: "keyswitch", lookAheadMs: 100 }) {
+  return {
+    id,
+    name,
+    type,
+    trigger,
+    performance: { globalOffsetMs: 0, overlapPercent: 0, overlapMaxMs: 0, ...performance }
+  };
+}
+
+const TRIGGER_DEFAULT = { type: "default" };
+function triggerManual() {
+  return { type: "manual", reason: "Confirm available articulation control in the source instrument." };
+}
+
+export const ENGINE_WIZARDS = [
+  {
+    id: "opus",
+    label: "EastWest Opus",
+    engine: "EastWest Opus",
+    defaultLibrary: "Hollywood Strings",
+    defaultPatch: "1st Violins KS Master",
+    summary:
+      "Opus/Play系。奏法はARTICULATIONSタブでKey Switchに割り当て、CCはAUTOMATIONタブで対応させます。内部パッチは別名保存してください。",
+    noteNaming: "C3=60",
+    playableRange: { low: 55, high: 103 },
+    keyswitchRange: { low: 12, high: 36 },
+    keyswitchStartNote: "C0",
+    timing: { trackOffsetMs: 0, ccLookAheadMs: 80, programChangeLookAheadMs: 150 },
+    articulationPresets: [
+      artPreset("sustain", "Sustain", "long", { globalOffsetMs: -80 }),
+      artPreset("legato", "Legato", "legato", { globalOffsetMs: -80, overlapPercent: 5, overlapMaxMs: 80 }),
+      artPreset("portato", "Portato", "long", { globalOffsetMs: -40 }),
+      artPreset("spiccato", "Spiccato", "short", { globalOffsetMs: -20 }),
+      artPreset("staccato", "Staccato", "short", { globalOffsetMs: -20 }),
+      artPreset("pizzicato", "Pizzicato", "short", { globalOffsetMs: -10 }),
+      artPreset("tremolo", "Tremolo", "long", { globalOffsetMs: -60 }),
+      artPreset("trill_half", "Trill (half)", "long", { globalOffsetMs: -60 }),
+      artPreset("trill_whole", "Trill (whole)", "long", { globalOffsetMs: -60 }),
+      artPreset("marcato", "Marcato", "marcato", { globalOffsetMs: -40 }),
+      artPreset("accent", "Accent", "accent", { globalOffsetMs: -30 }),
+      artPreset("harmonics", "Harmonics", "long", { globalOffsetMs: -60 })
+    ],
+    controlPresets: [
+      ccControl("intensity", "Modulation wheel", 1),
+      ccControl("legatoTime", "Legato Time", 5),
+      ccControl("midiVolume", "MIDI Volume", 7),
+      ccControl("pan", "MIDI Pan", 10),
+      ccControl("volume", "Expression", 11),
+      ccControl("conSordino", "Con Sordino", 15),
+      ccControl("vibratoDepth", "Vibrato", 21),
+      ccControl("fingerPosition", "Finger Position", 70)
+    ],
+    setupInstructions: [
+      "OpusでARTICULATIONSタブを開く",
+      "未使用奏法のNoneを左クリックし、Key Switchを選択する",
+      "本Profileのキースイッチ割当（自動採番）と照合する",
+      "Opus側パッチを別名保存する",
+      "AUTOMATIONタブのCC割当を本Profileと照合する"
+    ]
+  },
+  {
+    id: "kontakt",
+    label: "Kontakt / 8Dio",
+    engine: "Kontakt",
+    defaultLibrary: "8Dio Century Strings",
+    defaultPatch: "8Dio Century - Violins 1",
+    summary:
+      "Kontakt系（8Dio Century等）。奏法は画面下部のキースイッチ、ノブ類はMIDI Learnで対応させます。Kontakt内部ファイルは編集しません。",
+    noteNaming: "Kontakt",
+    playableRange: { low: 55, high: 103 },
+    keyswitchRange: { low: 12, high: 33 },
+    keyswitchStartNote: "C-1",
+    timing: { trackOffsetMs: 0, ccLookAheadMs: 80, programChangeLookAheadMs: 150 },
+    articulationPresets: [
+      artPreset("sus_vibrato", "SUS VIBRATO", "long", { globalOffsetMs: -80 }),
+      artPreset("legato", "LEGATO", "legato", { globalOffsetMs: -80, overlapPercent: 5, overlapMaxMs: 80 }),
+      artPreset("sus_molto_vib", "SUS MOLTO VIB", "long", { globalOffsetMs: -80 }),
+      artPreset("sus_non_vib", "SUS NON VIB", "long", { globalOffsetMs: -80 }),
+      artPreset("marcato", "MARCATO", "marcato", { globalOffsetMs: -40 }),
+      artPreset("staccato", "STACCATO", "short", { globalOffsetMs: -20 }),
+      artPreset("spiccato_feather", "SPICCATO FEATHER", "short", { globalOffsetMs: -20 }),
+      artPreset("spiccato_tapped", "SPICCATO TAPPED", "short", { globalOffsetMs: -20 }),
+      artPreset("loure_short", "LOURE SHORT", "short", { globalOffsetMs: -20 }),
+      artPreset("tremolo", "TREMOLO", "long", { globalOffsetMs: -60 }),
+      artPreset("trill", "TRILL", "long", { globalOffsetMs: -60 })
+    ],
+    controlPresets: [
+      learnControl("intensity", "DYNAMICS", 1),
+      learnControl("volume", "EXPRESSION", 11),
+      learnControl("vibratoDepth", "VIBRATO", 21),
+      learnControl("legatoSpeed", "SPEED", 20),
+      learnControl("releaseTail", "RELEASE TAILS", 23),
+      learnControl("legatoVolume", "LEGATO VOL.", 24)
+    ],
+    setupInstructions: [
+      "Kontakt画面の奏法表とKeyswitchを確認する",
+      "本Profileのキースイッチ割当（自動採番）と照合する",
+      "ノブ類はMIDI Learnまたは手動対象として分類する",
+      "Kontakt内部ファイルは直接編集しない"
+    ]
+  },
+  {
+    id: "logic",
+    label: "Logic Preset",
+    engine: "Logic Instrument",
+    defaultLibrary: "Logic Preset Strings",
+    defaultPatch: "Studio Strings",
+    summary:
+      "Logic内蔵音源。Articulationはデフォルト/Smart Controlsで切替。キースイッチは持ちません。CC1/CC11の反応を手動確認します。",
+    noteNaming: "Logic",
+    playableRange: { low: 36, high: 103 },
+    keyswitchRange: { low: 0, high: 0 },
+    keyswitchStartNote: null,
+    timing: { trackOffsetMs: 0, ccLookAheadMs: 80, programChangeLookAheadMs: 150 },
+    articulationPresets: [
+      artPreset("sustain", "Sustain", "long", { globalOffsetMs: -20 }, TRIGGER_DEFAULT),
+      artPreset("legato", "Legato", "legato", { globalOffsetMs: -30, overlapPercent: 5, overlapMaxMs: 80 }, TRIGGER_DEFAULT),
+      artPreset("staccato", "Staccato", "short", { globalOffsetMs: 0 }, triggerManual()),
+      artPreset("accent", "Accent", "accent", { globalOffsetMs: 0 }, triggerManual()),
+      artPreset("marcato", "Marcato", "marcato", { globalOffsetMs: 0 }, triggerManual()),
+      artPreset("pizzicato", "Pizzicato", "short", { globalOffsetMs: 0 }, triggerManual())
+    ],
+    controlPresets: [
+      ccControl("intensity", "Dynamics", 1),
+      ccControl("volume", "Expression", 11)
+    ],
+    setupInstructions: [
+      "Logicプリセット弦楽器を読み込む",
+      "使用可能なArticulationとSmart Controlsを手動確認する",
+      "MIDI CC1/11の反応を確認する"
+    ]
+  }
+];
+
+export function engineWizardById(id) {
+  return ENGINE_WIZARDS.find((wizard) => wizard.id === id) ?? null;
+}
+
+// Number the keyswitch-triggered articulations chromatically from a start note,
+// leaving default/manual articulations untouched. Returns new objects.
+export function autoAssignKeyswitches(articulations, startNoteName = "C0", noteNaming = "C3=60") {
+  const startMidi = startNoteName === null ? null : noteNameToMidi(startNoteName, noteNaming);
+  let slot = 0;
+  return articulations.map((art) => {
+    if (art.trigger?.type !== "keyswitch" || startMidi === null) return structuredClone(art);
+    const noteName = pitchName(startMidi + slot, noteNaming);
+    slot += 1;
+    return { ...structuredClone(art), trigger: { ...art.trigger, noteName } };
+  });
+}
+
+function engineProfileId(engine, library, patch) {
+  return [engine, library, patch]
+    .map((part) => String(part || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""))
+    .filter(Boolean)
+    .join("_") || "custom_profile";
+}
+
+// Build a complete, validated-shape instrument profile from an engine wizard
+// and the user's selection of articulations/controls. Pure and testable.
+export function buildEngineProfile(wizardId, selection = {}) {
+  const wizard = engineWizardById(wizardId);
+  if (!wizard) throw new Error(`Unknown engine wizard: ${wizardId}`);
+  const library = String(selection.library ?? wizard.defaultLibrary ?? "Custom Library").trim() || "Custom Library";
+  const patch = String(selection.patch ?? wizard.defaultPatch ?? "Custom Patch").trim() || "Custom Patch";
+  const artIds = selection.articulationIds ?? wizard.articulationPresets.map((art) => art.id);
+  const ctrlIds = selection.controlIds ?? wizard.controlPresets.map((control) => control.internalParameter);
+  const articulations = autoAssignKeyswitches(
+    wizard.articulationPresets.filter((art) => artIds.includes(art.id)).map((art) => structuredClone(art)),
+    wizard.keyswitchStartNote,
+    wizard.noteNaming
+  );
+  const controls = wizard.controlPresets
+    .filter((control) => ctrlIds.includes(control.internalParameter))
+    .map((control) => structuredClone(control));
+  return {
+    schemaVersion: "0.1.0",
+    id: engineProfileId(wizard.engine, library, patch),
+    engine: wizard.engine,
+    library,
+    patch,
+    noteNaming: wizard.noteNaming,
+    playableRange: { ...wizard.playableRange },
+    keyswitchRange: { ...wizard.keyswitchRange },
+    articulations,
+    controls,
+    timing: { ...wizard.timing },
+    calibration: [],
+    setupInstructions: [...wizard.setupInstructions],
+    validationRules: [],
+    testEvents: []
+  };
+}
+
 export function createInitialProject() {
   return {
     schemaVersion: "0.1.0",

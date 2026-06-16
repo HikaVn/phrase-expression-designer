@@ -77,7 +77,12 @@ npm test
 - Browser auto-save and restore
 - Instrument Profile JSON import/export
 - Built-in Opus, 8Dio/Kontakt, and Logic Preset instrument profiles
-- Editable setup wizard, validation, setup report, and test MIDI generation
+- Engine-specific Setup Wizards (EastWest Opus / Kontakt·8Dio / Logic): pick an
+  engine to load its articulation and control preset menus with checkboxes,
+  engine-correct note naming, ranges and timing, automatic keyswitch numbering
+  ("Auto-assign KS"), and tailored setup instructions
+- Editable generic setup wizard (any base profile), validation, setup report,
+  and test MIDI generation
 
 ## Limits
 

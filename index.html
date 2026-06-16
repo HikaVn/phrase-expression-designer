@@ -257,6 +257,12 @@
           <button id="wizardCloseButton" value="cancel" type="submit">閉じる</button>
         </header>
         <div class="wizard-grid">
+          <section class="wizard-section wide">
+            <h3>Engine</h3>
+            <p class="block-hint">エンジンを選ぶと、奏法・コントロールのプリセットと推奨設定を読み込みます。</p>
+            <div id="wizardEngineButtons" class="engine-button-row"></div>
+            <p id="wizardEngineSummary" class="wizard-summary"></p>
+          </section>
           <section class="wizard-section">
             <h3>Source</h3>
             <label>Base Profile<select id="wizardBaseSelect"></select></label>
@@ -286,12 +292,17 @@
             </div>
           </section>
           <section class="wizard-section wide">
-            <h3>Articulations</h3>
-            <textarea id="wizardArticulationsText"></textarea>
+            <div class="wizard-subhead">
+              <h3>Articulations</h3>
+              <button id="wizardAutoKsButton" type="button">Auto-assign KS</button>
+            </div>
+            <div id="wizardArtPresets" class="preset-list"></div>
+            <textarea id="wizardArticulationsText" aria-label="Articulations（詳細編集）"></textarea>
           </section>
           <section class="wizard-section wide">
             <h3>Controls</h3>
-            <textarea id="wizardControlsText"></textarea>
+            <div id="wizardCtrlPresets" class="preset-list"></div>
+            <textarea id="wizardControlsText" aria-label="Controls（詳細編集）"></textarea>
           </section>
           <section class="wizard-section wide">
             <h3>Setup Instructions</h3>

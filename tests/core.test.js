@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BUILT_IN_PROFILES,
+  ENGINE_WIZARDS,
+  engineWizardById,
+  buildEngineProfile,
+  autoAssignKeyswitches,
   addCrescendo,
   applyDynamic,
   addSlur,
@@ -564,4 +568,77 @@ test("keySignatureSteps lists the right symbols per clef", () => {
   assert.deepEqual(keySignatureSteps(-3, "bass"),
     [{ step: 2, symbol: "♭" }, { step: 5, symbol: "♭" }, { step: 1, symbol: "♭" }]);
   assert.deepEqual(keySignatureSteps(0, "treble"), []);
+});
+
+test("engineWizardById returns the three engine wizards, null otherwise", () => {
+  assert.deepEqual(ENGINE_WIZARDS.map((w) => w.id), ["opus", "kontakt", "logic"]);
+  assert.equal(engineWizardById("opus").engine, "EastWest Opus");
+  assert.equal(engineWizardById("kontakt").noteNaming, "Kontakt");
+  assert.equal(engineWizardById("nope"), null);
+});
+
+test("autoAssignKeyswitches numbers keyswitch articulations and skips the rest", () => {
+  const articulations = [
+    { id: "sus", name: "Sustain", type: "long", trigger: { type: "keyswitch", lookAheadMs: 100 } },
+    { id: "stac", name: "Staccato", type: "short", trigger: { type: "keyswitch", lookAheadMs: 100 } },
+    { id: "leg", name: "Legato", type: "legato", trigger: { type: "default" } }
+  ];
+  const assigned = autoAssignKeyswitches(articulations, "C0", "C3=60");
+  assert.equal(assigned[0].trigger.noteName, "C0");
+  assert.equal(assigned[1].trigger.noteName, "C#0");
+  assert.equal(assigned[2].trigger.noteName, undefined); // default trigger untouched
+  // The input is not mutated.
+  assert.equal(articulations[0].trigger.noteName, undefined);
+});
+
+test("autoAssignKeyswitches leaves notes unassigned when the engine has no keyswitches", () => {
+  const articulations = [{ id: "sus", name: "Sustain", type: "long", trigger: { type: "keyswitch", lookAheadMs: 100 } }];
+  const assigned = autoAssignKeyswitches(articulations, null, "Logic");
+  assert.equal(assigned[0].trigger.noteName, undefined);
+});
+
+test("buildEngineProfile produces a validated profile for every engine", () => {
+  ENGINE_WIZARDS.forEach((wizard) => {
+    const profile = buildEngineProfile(wizard.id);
+    assert.equal(profile.engine, wizard.engine);
+    assert.equal(profile.noteNaming, wizard.noteNaming);
+    assert.equal(profile.articulations.length, wizard.articulationPresets.length);
+    assert.equal(profile.controls.length, wizard.controlPresets.length);
+    const errors = validateProfile(profile).filter((m) => m.level === "Error");
+    assert.deepEqual(errors, [], `${wizard.id} should validate without errors`);
+    // Keyswitch slots are unique.
+    const ksNotes = profile.articulations
+      .filter((art) => art.trigger?.type === "keyswitch")
+      .map((art) => art.trigger.noteName);
+    assert.equal(new Set(ksNotes).size, ksNotes.length, `${wizard.id} keyswitches must be unique`);
+  });
+});
+
+test("buildEngineProfile selects a subset and renumbers keyswitches from the start", () => {
+  const profile = buildEngineProfile("opus", {
+    library: "Custom Strings",
+    patch: "Violas",
+    articulationIds: ["legato", "staccato"],
+    controlIds: ["intensity"]
+  });
+  assert.equal(profile.id, "eastwest_opus_custom_strings_violas");
+  assert.deepEqual(profile.articulations.map((a) => a.id), ["legato", "staccato"]);
+  assert.equal(profile.articulations[0].trigger.noteName, "C0");
+  assert.equal(profile.articulations[1].trigger.noteName, "C#0");
+  assert.deepEqual(profile.controls.map((c) => c.internalParameter), ["intensity"]);
+});
+
+test("buildEngineProfile for Logic has no keyswitches and uses default/manual triggers", () => {
+  const profile = buildEngineProfile("logic");
+  assert.equal(profile.keyswitchRange.low, 0);
+  assert.equal(profile.keyswitchRange.high, 0);
+  assert.ok(profile.articulations.every((art) => art.trigger.type !== "keyswitch"));
+  assert.ok(profile.controls.every((control) => control.target.type === "midiCC"));
+});
+
+test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {
+  const profile = buildEngineProfile("kontakt");
+  assert.ok(profile.controls.every((control) => control.target.type === "midiLearnRequired"));
+  assert.equal(profile.articulations[0].trigger.noteName, "C-1");
+  assert.throws(() => buildEngineProfile("unknown"), /Unknown engine wizard/);
 });

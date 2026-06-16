@@ -1,5 +1,9 @@
 import {
   BUILT_IN_PROFILES,
+  ENGINE_WIZARDS,
+  engineWizardById,
+  buildEngineProfile,
+  autoAssignKeyswitches,
   INTERNAL_PARAMETERS,
   PHRASE_TEMPLATES,
   addCrescendo,
@@ -61,6 +65,9 @@ let lastRepeatAction = null;
 let dragState = null;
 let suppressNextCurveClick = false;
 let selectedCurvePoint = null;
+let wizardEngineId = null;
+let wizardArtSelection = new Set();
+let wizardCtrlSelection = new Set();
 const AUTOSAVE_KEY = "phraseExpressionDesigner.autosave.v1";
 
 const svgNs = "http://www.w3.org/2000/svg";
@@ -88,6 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
   populateProfiles();
   populateTemplateButtons();
   populateNoteExpressionParameters();
+  populateEngineWizards();
   bindEvents();
   render();
 });
@@ -142,6 +150,11 @@ function bindElements() {
     "validationList",
     "reportText",
     "wizardDialog",
+    "wizardEngineButtons",
+    "wizardEngineSummary",
+    "wizardAutoKsButton",
+    "wizardArtPresets",
+    "wizardCtrlPresets",
     "wizardBaseSelect",
     "wizardEngineInput",
     "wizardLibraryInput",
@@ -265,7 +278,12 @@ function bindEvents() {
     normalizeArticulationsForProfile();
   }));
   els.wizardButton.addEventListener("click", openWizard);
-  els.wizardBaseSelect.addEventListener("change", () => fillWizardFromProfile(profileById(els.wizardBaseSelect.value)));
+  els.wizardBaseSelect.addEventListener("change", () => {
+    clearEngineSelection();
+    fillWizardFromProfile(profileById(els.wizardBaseSelect.value));
+    renderWizardValidation();
+  });
+  els.wizardAutoKsButton.addEventListener("click", onWizardAutoAssignKeyswitches);
   els.wizardRefreshButton.addEventListener("click", () => renderWizardValidation());
   els.wizardApplyButton.addEventListener("click", applyWizardProfile);
   els.applyBatchButton.addEventListener("click", onBatchApply);
@@ -466,6 +484,7 @@ function durationChangeSummary(result) {
 function openWizard() {
   els.wizardBaseSelect.replaceChildren(...profiles.map((profile) => option(profile.id, `${profile.engine} / ${profile.library}`)));
   els.wizardBaseSelect.value = project.profileId;
+  clearEngineSelection();
   fillWizardFromProfile(activeProfile());
   renderWizardValidation();
   if (typeof els.wizardDialog.showModal === "function") els.wizardDialog.showModal();
@@ -483,18 +502,128 @@ function fillWizardFromProfile(profile) {
   els.wizardKeyswitchHighInput.value = profile.keyswitchRange?.high ?? 36;
   els.wizardCcLookAheadInput.value = profile.timing?.ccLookAheadMs ?? 80;
   els.wizardPcLookAheadInput.value = profile.timing?.programChangeLookAheadMs ?? 150;
-  els.wizardArticulationsText.value = profile.articulations.map((art) => {
-    const trigger = art.trigger?.type === "keyswitch" ? art.trigger.noteName : art.trigger?.type ?? "default";
+  els.wizardArticulationsText.value = articulationsToText(profile.articulations);
+  els.wizardControlsText.value = controlsToText(profile.controls);
+  els.wizardInstructionsText.value = (profile.setupInstructions ?? []).join("\n");
+}
+
+function articulationsToText(articulations) {
+  return (articulations ?? []).map((art) => {
+    const trigger = art.trigger?.type === "keyswitch" ? (art.trigger.noteName ?? "") : art.trigger?.type ?? "default";
     const lookAhead = art.trigger?.lookAheadMs ?? 100;
     const perf = art.performance ?? {};
     return [art.id, art.name, art.type, trigger, lookAhead, perf.globalOffsetMs ?? 0, perf.overlapPercent ?? 0, perf.overlapMaxMs ?? 0].join("\t");
   }).join("\n");
-  els.wizardControlsText.value = profile.controls.map((control) => {
+}
+
+function controlsToText(controls) {
+  return (controls ?? []).map((control) => {
     const target = control.target ?? { type: "manual" };
     const value = target.type === "midiCC" ? target.cc : target.suggestedCC ?? "";
     return [control.internalParameter, control.label, target.type, value, control.enabled === false ? "off" : "on"].join("\t");
   }).join("\n");
-  els.wizardInstructionsText.value = (profile.setupInstructions ?? []).join("\n");
+}
+
+// --- Engine-specific Setup Wizards ---------------------------------------
+
+function populateEngineWizards() {
+  els.wizardEngineButtons.replaceChildren(...ENGINE_WIZARDS.map((wizard) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "engine-button";
+    button.dataset.engineId = wizard.id;
+    button.textContent = wizard.label;
+    button.addEventListener("click", () => selectEngineWizard(wizard.id));
+    return button;
+  }));
+}
+
+function selectEngineWizard(id) {
+  const wizard = engineWizardById(id);
+  if (!wizard) return;
+  wizardEngineId = id;
+  wizardArtSelection = new Set(wizard.articulationPresets.map((art) => art.id));
+  wizardCtrlSelection = new Set(wizard.controlPresets.map((control) => control.internalParameter));
+  // Start from the engine's default identity so the build uses engine defaults.
+  els.wizardLibraryInput.value = "";
+  els.wizardPatchInput.value = "";
+  els.wizardEngineSummary.textContent = wizard.summary ?? "";
+  renderEngineButtonsState();
+  renderWizardPresets(wizard);
+  rebuildWizardFromSelection();
+}
+
+function clearEngineSelection() {
+  wizardEngineId = null;
+  wizardArtSelection = new Set();
+  wizardCtrlSelection = new Set();
+  els.wizardEngineSummary.textContent = "";
+  els.wizardArtPresets.replaceChildren();
+  els.wizardCtrlPresets.replaceChildren();
+  renderEngineButtonsState();
+}
+
+function renderEngineButtonsState() {
+  els.wizardEngineButtons.querySelectorAll(".engine-button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.engineId === wizardEngineId);
+  });
+}
+
+function renderWizardPresets(wizard) {
+  els.wizardArtPresets.replaceChildren(...wizard.articulationPresets.map((art) =>
+    presetToggle(art.id, art.name, wizardArtSelection, () => rebuildWizardFromSelection())));
+  els.wizardCtrlPresets.replaceChildren(...wizard.controlPresets.map((control) =>
+    presetToggle(control.internalParameter, control.label, wizardCtrlSelection, () => rebuildWizardFromSelection())));
+}
+
+function presetToggle(value, label, selectionSet, onChange) {
+  const wrapper = document.createElement("label");
+  wrapper.className = "preset-toggle";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = selectionSet.has(value);
+  checkbox.addEventListener("change", () => {
+    if (checkbox.checked) selectionSet.add(value);
+    else selectionSet.delete(value);
+    onChange();
+  });
+  const text = document.createElement("span");
+  text.textContent = label;
+  wrapper.append(checkbox, text);
+  return wrapper;
+}
+
+function rebuildWizardFromSelection() {
+  if (!wizardEngineId) return;
+  let profile;
+  try {
+    profile = buildEngineProfile(wizardEngineId, {
+      library: els.wizardLibraryInput.value.trim() || undefined,
+      patch: els.wizardPatchInput.value.trim() || undefined,
+      articulationIds: [...wizardArtSelection],
+      controlIds: [...wizardCtrlSelection]
+    });
+  } catch (error) {
+    els.statusText.textContent = `Wizardエラー: ${error.message}`;
+    return;
+  }
+  fillWizardFromProfile(profile);
+  renderWizardValidation(profile);
+}
+
+function onWizardAutoAssignKeyswitches() {
+  const wizard = wizardEngineId ? engineWizardById(wizardEngineId) : null;
+  const startNote = wizard?.keyswitchStartNote ?? "C0";
+  const noteNaming = els.wizardNoteNamingSelect.value || wizard?.noteNaming || "C3=60";
+  let articulations;
+  try {
+    articulations = parseWizardArticulations(els.wizardArticulationsText.value);
+  } catch (error) {
+    els.statusText.textContent = `Wizardエラー: ${error.message}`;
+    return;
+  }
+  els.wizardArticulationsText.value = articulationsToText(autoAssignKeyswitches(articulations, startNote, noteNaming));
+  renderWizardValidation();
 }
 
 function applyWizardProfile() {
