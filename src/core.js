@@ -1146,6 +1146,22 @@ export function generateMidiEventList(project, profile = getProfile(project)) {
   return events.sort((a, b) => a.tick - b.tick || a.priority - b.priority);
 }
 
+// Turn the project's MIDI event list into time-stamped playable messages for
+// live Web MIDI output: drop file-only meta (tempo, 0xF0+) and convert each
+// event's tick to milliseconds from the start. Order is preserved from the
+// event list (already sorted by tick then priority), so note-on/keyswitch/CC
+// ordering at the same instant is kept.
+export function generatePlaybackMessages(project, profile = getProfile(project)) {
+  const tempoMap = project.tempoMap?.length ? project.tempoMap : [{ tick: 0, bpm: 120 }];
+  return generateMidiEventList(project, profile)
+    .filter((event) => Array.isArray(event.bytes) && event.bytes[0] < 0xf0)
+    .map((event) => ({
+      timeMs: tickToMs(event.tick, tempoMap, project.ppq),
+      type: event.type,
+      bytes: event.bytes
+    }));
+}
+
 export function sampleCurve(project, parameter, tick) {
   const curve = project.expressionCurves[parameter];
   if (!curve || curve.points.length === 0) return 0.5;

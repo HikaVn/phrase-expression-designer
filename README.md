@@ -71,6 +71,10 @@ npm test
 - Undo/redo
 - Copy, cut, paste, duplicate, and repeat operation shortcuts
 - MIDI file import and export
+- Live MIDI output (Web MIDI): stream the generated events in real time to an
+  external MIDI port (e.g. an IAC bus into Logic) so a real instrument sounds
+  them — the app itself stays silent. Play/Stop transport with all-notes-off on
+  stop. Requires Chrome/Edge over https or localhost
 - MIDI Event Preview with final tempo, keyswitch, CC, and note events
 - MIDI import support for tempo changes and common CC expression curves
 - Project JSON save/load
@@ -86,4 +90,9 @@ npm test
 
 ## Limits
 
-This is a browser MVP. It does not implement AU MIDI FX, VST3, Logic project editing, Opus/Kontakt internal editing, host automation writing, MusicXML, or publication-quality notation layout.
+This is a browser MVP. It produces and streams MIDI; it does not host or render
+audio itself, so sound comes from an external instrument (e.g. Logic hosting
+Opus/Kontakt) driven over Web MIDI or from an exported `.mid`. It does not
+implement AU MIDI FX, VST3, Logic project editing, Opus/Kontakt internal
+editing, host automation writing, MusicXML, or publication-quality notation
+layout.

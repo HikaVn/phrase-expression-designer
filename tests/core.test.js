@@ -24,6 +24,7 @@ import {
   exportMidi,
   generateCcEvents,
   generateMidiEventList,
+  generatePlaybackMessages,
   importMidi,
   isSharpPitch,
   nearestPitchForLetter,
@@ -634,6 +635,20 @@ test("buildEngineProfile for Logic has no keyswitches and uses default/manual tr
   assert.equal(profile.keyswitchRange.high, 0);
   assert.ok(profile.articulations.every((art) => art.trigger.type !== "keyswitch"));
   assert.ok(profile.controls.every((control) => control.target.type === "midiCC"));
+});
+
+test("generatePlaybackMessages drops file meta and time-stamps playable bytes", () => {
+  const project = createInitialProject();
+  const messages = generatePlaybackMessages(project, BUILT_IN_PROFILES[0]);
+  assert.ok(messages.length > 0);
+  // No tempo/meta/sysex: every message is a channel-voice status byte.
+  assert.ok(messages.every((m) => m.bytes[0] < 0xf0));
+  assert.ok(messages.every((m) => typeof m.timeMs === "number" && m.timeMs >= 0));
+  // One noteOn per note, in score order; the first sounds at the start.
+  const noteOns = messages.filter((m) => m.type === "noteOn");
+  assert.equal(noteOns.length, project.notes.length);
+  assert.deepEqual(noteOns.map((m) => m.bytes[1]), [60, 62, 64, 67]);
+  assert.equal(noteOns[0].timeMs, 0);
 });
 
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {

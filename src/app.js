@@ -35,6 +35,7 @@ import {
   formatPosition,
   generateCcEvents,
   generateMidiEventList,
+  generatePlaybackMessages,
   getArticulation,
   importMidi,
   mixedValue,
@@ -68,6 +69,11 @@ let selectedCurvePoint = null;
 let wizardEngineId = null;
 let wizardArtSelection = new Set();
 let wizardCtrlSelection = new Set();
+let midiAccess = null;
+let midiOutput = null;
+let playbackTimer = null;
+let isPlaying = false;
+const PLAYBACK_LEAD_MS = 120;
 const AUTOSAVE_KEY = "phraseExpressionDesigner.autosave.v1";
 
 const svgNs = "http://www.w3.org/2000/svg";
@@ -98,6 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
   populateEngineWizards();
   bindEvents();
   render();
+  initMidi();
 });
 
 function bindElements() {
@@ -122,6 +129,10 @@ function bindElements() {
     "decrescendoButton",
     "bpmInput",
     "ppqInput",
+    "midiOutputSelect",
+    "playButton",
+    "stopButton",
+    "midiStatusOutput",
     "cursorOutput",
     "selectionOutput",
     "autosaveOutput",
@@ -273,6 +284,12 @@ function bindEvents() {
   els.ppqInput.addEventListener("change", () => mutate("Change PPQ", () => {
     project.ppq = clamp(Number(els.ppqInput.value), 120, 3840);
   }));
+  els.midiOutputSelect.addEventListener("change", () => {
+    midiOutput = midiAccess?.outputs.get(els.midiOutputSelect.value) ?? null;
+    els.midiStatusOutput.textContent = midiOutput ? `→ ${midiOutput.name}` : "出力先を選択";
+  });
+  els.playButton.addEventListener("click", startLivePlayback);
+  els.stopButton.addEventListener("click", stopLivePlayback);
   els.profileSelect.addEventListener("change", () => mutate("Change profile", () => {
     project.profileId = els.profileSelect.value;
     normalizeArticulationsForProfile();
@@ -782,6 +799,7 @@ function onKeyDown(event) {
   }
   if (key === "Escape") {
     event.preventDefault();
+    stopLivePlayback();
     mutate("Clear selection", () => {
       project.selectedIds = [];
       project.selectedBars = [];
@@ -1640,6 +1658,88 @@ function downloadMidi(targetProject, filename) {
   const bytes = exportMidi(targetProject, profileById(targetProject.profileId) ?? activeProfile());
   downloadBlob(new Blob([bytes], { type: "audio/midi" }), filename);
   els.statusText.textContent = `${filename}を書き出しました。`;
+}
+
+// --- Live MIDI output (Web MIDI) -----------------------------------------
+// The app stays silent; it streams the generated events to an external MIDI
+// port (e.g. an IAC bus into Logic) so a real instrument sounds them. This is
+// the feedback loop — the body (sampler) lives outside, the brain here.
+
+async function initMidi() {
+  if (!navigator.requestMIDIAccess) {
+    els.midiStatusOutput.textContent = "Web MIDI非対応(Chrome系/localhost)";
+    els.midiOutputSelect.disabled = true;
+    els.playButton.disabled = true;
+    els.stopButton.disabled = true;
+    return;
+  }
+  try {
+    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+    midiAccess.addEventListener?.("statechange", populateMidiOutputs);
+    populateMidiOutputs();
+  } catch (error) {
+    els.midiStatusOutput.textContent = "MIDIアクセス不可";
+    els.midiOutputSelect.disabled = true;
+    els.playButton.disabled = true;
+    els.stopButton.disabled = true;
+  }
+}
+
+function populateMidiOutputs() {
+  if (!midiAccess) return;
+  const outputs = [...midiAccess.outputs.values()];
+  const previous = midiOutput?.id;
+  els.midiOutputSelect.replaceChildren(
+    option("", outputs.length ? "出力先を選択" : "出力先なし"),
+    ...outputs.map((out) => option(out.id, out.name ?? out.id))
+  );
+  if (previous && outputs.some((out) => out.id === previous)) {
+    els.midiOutputSelect.value = previous;
+    els.midiStatusOutput.textContent = `→ ${midiOutput.name}`;
+  } else {
+    midiOutput = null;
+    els.midiStatusOutput.textContent = outputs.length ? "出力先を選択" : "出力先なし";
+  }
+}
+
+function startLivePlayback() {
+  if (!midiOutput) {
+    els.midiStatusOutput.textContent = "出力先を選択してください";
+    return;
+  }
+  stopLivePlayback();
+  const messages = generatePlaybackMessages(project, activeProfile());
+  if (messages.length === 0) {
+    els.midiStatusOutput.textContent = "再生するイベントがありません";
+    return;
+  }
+  const startAt = performance.now() + PLAYBACK_LEAD_MS;
+  let endMs = 0;
+  messages.forEach((message) => {
+    midiOutput.send(message.bytes, startAt + message.timeMs);
+    endMs = Math.max(endMs, message.timeMs);
+  });
+  isPlaying = true;
+  els.playButton.classList.add("active");
+  els.midiStatusOutput.textContent = "再生中…";
+  playbackTimer = setTimeout(stopLivePlayback, PLAYBACK_LEAD_MS + endMs + 250);
+}
+
+function stopLivePlayback() {
+  if (playbackTimer) {
+    clearTimeout(playbackTimer);
+    playbackTimer = null;
+  }
+  if (midiOutput) {
+    midiOutput.clear?.(); // cancel anything still scheduled
+    midiOutput.send([0xb0, 120, 0]); // all sound off
+    midiOutput.send([0xb0, 123, 0]); // all notes off
+  }
+  if (isPlaying) {
+    els.midiStatusOutput.textContent = midiOutput ? `→ ${midiOutput.name}` : "停止";
+  }
+  isPlaying = false;
+  els.playButton.classList.remove("active");
 }
 
 function downloadJson(data, filename) {

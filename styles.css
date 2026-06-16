@@ -218,6 +218,36 @@ textarea:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.transport-panel .live-midi {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.live-midi select {
+  flex: 1 1 160px;
+  min-width: 120px;
+  max-width: 280px;
+}
+
+.live-midi button {
+  padding: 6px 12px;
+}
+
+#playButton.active {
+  background: var(--accent);
+  color: #0c1412;
+  border-color: var(--accent);
+}
+
+.live-midi output {
+  flex: 1 1 120px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .view-panel {
   padding: 12px;
   overflow: hidden;
