@@ -22,6 +22,8 @@ import {
   computePerformanceNotes,
   computeInterpretation,
   createDemoPhraseProject,
+  parsePhrase,
+  projectFromPhrase,
   DEFAULT_INTERPRETATION,
   copySelection,
   createNote,
@@ -880,6 +882,41 @@ test("fitCalibrationCurve falls back to linear on flat or degenerate input", () 
   assert.deepEqual(fitCalibrationCurve([{ value01: 0, level: -40 }, { value01: 1, level: -40 }]).points,
     [{ in: 0, out: 0 }, { in: 1, out: 1 }]);
   assert.deepEqual(fitCalibrationCurve([]).points, [{ in: 0, out: 0 }, { in: 1, out: 1 }]);
+});
+
+test("parsePhrase: sticky duration, nearest-octave letters, ticks advance", () => {
+  const { notes, endTick } = parsePhrase("4 C D E", { ppq: 960 });
+  assert.deepEqual(notes.map((n) => n.pitch), [72, 74, 76]); // nearest to default 67, then walk
+  assert.deepEqual(notes.map((n) => n.scoreTick), [0, 960, 1920]);
+  assert.ok(notes.every((n) => n.durationTicks === 960));
+  assert.equal(endTick, 2880);
+});
+
+test("parsePhrase: dotted/sticky values, rests, explicit octave, accidentals", () => {
+  const half = parsePhrase("2 C 4. D", { ppq: 960 });
+  assert.equal(half.notes[0].durationTicks, 1920);
+  assert.equal(half.notes[1].durationTicks, 1440); // dotted quarter
+  assert.equal(half.notes[1].scoreTick, 1920);
+
+  const withRest = parsePhrase("4 C r D", { ppq: 960 });
+  assert.equal(withRest.rests.length, 1);
+  assert.equal(withRest.rests[0].scoreTick, 960);
+  assert.equal(withRest.notes[1].scoreTick, 1920);
+
+  assert.equal(parsePhrase("C4").notes[0].pitch, 60);
+  assert.equal(parsePhrase("C5").notes[0].pitch, 72);
+  assert.equal(parsePhrase("C#4").notes[0].pitch, 61);
+  assert.equal(parsePhrase("Bb4").notes[0].pitch, 70);
+  assert.throws(() => parsePhrase("4 H"), /Bad token/);
+  assert.throws(() => parsePhrase("3 C"), /Bad duration/);
+});
+
+test("projectFromPhrase builds a playable project", () => {
+  const project = projectFromPhrase("4 C D E F | 2 G", { ppq: 960, profileId: "logic_preset_strings" });
+  assert.equal(project.profileId, "logic_preset_strings");
+  assert.equal(project.notes.length, 5);
+  assert.equal(project.cursorTick, project.notes.reduce((m, n) => Math.max(m, n.scoreTick + n.durationTicks), 0));
+  assert.ok(generateMidiEventList(project).some((e) => e.type === "noteOn"));
 });
 
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {

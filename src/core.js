@@ -1562,6 +1562,70 @@ export function createDemoPhraseProject(profileId = "opus_hollywood_strings") {
   return project;
 }
 
+// Sibelius-style text note entry (the primitive for fast / remote note entry):
+//   "4 C D E | 2 G   8 r A"  ->  sticky duration, A–G nearest the previous
+// pitch (or explicit scientific octave C4=60), accidentals # b, dots, r = rest,
+// | = barline (ignored for timing). Pure; returns notes/rests and the end tick.
+const PHRASE_LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+export function parsePhrase(text, { ppq = PPQ_DEFAULT, startTick = 0, velocity = 80, articulation = "sustain" } = {}) {
+  const tokens = String(text ?? "").trim().split(/\s+/).filter(Boolean);
+  const notes = [];
+  const rests = [];
+  let tick = Math.max(0, Math.round(startTick));
+  let durTicks = ppq; // quarter note default
+  let lastPitch = 67;
+  tokens.forEach((token) => {
+    if (token === "|") return;
+    const durMatch = /^(\d+)(\.*)$/.exec(token);
+    if (durMatch) {
+      const base = Number(durMatch[1]);
+      if (![1, 2, 4, 8, 16, 32, 64].includes(base)) throw new Error(`Bad duration: ${token}`);
+      let value = (ppq * 4) / base;
+      let increment = value;
+      for (let i = 0; i < durMatch[2].length; i += 1) {
+        increment /= 2;
+        value += increment;
+      }
+      durTicks = Math.max(1, Math.round(value));
+      return;
+    }
+    if (/^r$/i.test(token)) {
+      rests.push({ id: cryptoRandomId("rest"), scoreTick: tick, durationTicks: durTicks });
+      tick += durTicks;
+      return;
+    }
+    const noteMatch = /^([A-Ga-g])([#b]?)(-?\d+)?$/.exec(token);
+    if (!noteMatch) throw new Error(`Bad token: ${token}`);
+    const letter = noteMatch[1].toUpperCase();
+    const accidental = noteMatch[2] === "#" ? 1 : noteMatch[2] === "b" ? -1 : 0;
+    let pitch;
+    if (noteMatch[3] !== undefined) {
+      pitch = (Number(noteMatch[3]) + 1) * 12 + PHRASE_LETTER_PC[letter] + accidental; // scientific C4=60
+    } else {
+      pitch = nearestPitchForLetter(letter, lastPitch) + accidental;
+    }
+    pitch = clamp(pitch, 0, 127);
+    notes.push(createNote({ pitch, scoreTick: tick, durationTicks: durTicks, articulation, velocity }));
+    lastPitch = pitch;
+    tick += durTicks;
+  });
+  return { notes, rests, endTick: tick };
+}
+
+export function projectFromPhrase(text, { profileId, ...options } = {}) {
+  const project = createInitialProject();
+  if (profileId) project.profileId = profileId;
+  const { notes, rests } = parsePhrase(text, { ppq: project.ppq, ...options });
+  project.notes = notes;
+  project.rests = rests;
+  project.slurs = [];
+  project.crescendos = [];
+  project.dynamics = [];
+  project.cursorTick = notes.reduce((max, note) => Math.max(max, note.scoreTick + note.durationTicks), 0);
+  return project;
+}
+
 export function exportMidi(project, profile = getProfile(project)) {
   const events = generateMidiEventList(project, profile);
   const track = buildTrack(events);

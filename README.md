@@ -31,8 +31,21 @@ Then open `http://127.0.0.1:4273`.
 npm test
 ```
 
+## MCP server (agent control)
+
+A dependency-free reference MCP server lets an agent do note entry / MIDI
+rendering remotely by reusing the same pure core. See `mcp/README.md`.
+
+```bash
+node mcp/server.js
+```
+
 ## Implemented MVP Features
 
+- Text note entry (`テキスト入力`): type a Sibelius-style phrase
+  (`4 C D E | 2 G`) — sticky durations, A–G nearest the previous pitch (or
+  explicit octave `C4`=60), accidentals `# b`, dots, `r` rest — and it appends
+  at the cursor. Same `parsePhrase` primitive the MCP server's `enter_notes` uses
 - Notation-style note display and A-G keyboard input (`r` inserts a rest);
   selectable treble/bass clef with correct staff positions, ledger lines,
   sharps, and stem direction

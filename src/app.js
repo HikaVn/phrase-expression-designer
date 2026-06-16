@@ -13,6 +13,7 @@ import {
   applyBatchProperties,
   applyDynamic,
   applyNoteLetter,
+  parsePhrase,
   applyPhraseTemplate,
   beamGroups,
   dynamicCommandFromText,
@@ -142,6 +143,8 @@ function bindElements() {
     "notationModeButton",
     "performanceModeButton",
     "durationSelect",
+    "phraseInput",
+    "phraseEnterButton",
     "restButton",
     "tieButton",
     "slurButton",
@@ -302,6 +305,13 @@ function bindEvents() {
   els.selectModeButton.addEventListener("click", () => setMode("select"));
   els.notationModeButton.addEventListener("click", () => setMode("notation"));
   els.performanceModeButton.addEventListener("click", () => setMode("performance"));
+  els.phraseEnterButton.addEventListener("click", enterPhraseText);
+  els.phraseInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      enterPhraseText();
+    }
+  });
   els.restButton.addEventListener("click", () => mutate("Add rest", () => addRest(project, currentDurationTicks())));
   els.tieButton.addEventListener("click", () => mutate("Toggle tie", () => toggleTie(project)));
   els.slurButton.addEventListener("click", () => mutate("Add slur", () => addSlur(project)));
@@ -1860,6 +1870,27 @@ function sendTestTone() {
   midiOutput.send([0x90, 60, 90], now + 20);
   midiOutput.send([0x80, 60, 0], now + 520);
   els.midiStatusOutput.textContent = "テスト音を送出 (C4)";
+}
+
+function enterPhraseText() {
+  const text = els.phraseInput.value.trim();
+  if (!text) return;
+  let parsed;
+  try {
+    parsed = parsePhrase(text, { ppq: project.ppq, startTick: project.cursorTick, velocity: 80, articulation: "sustain" });
+  } catch (error) {
+    els.statusText.textContent = `テキスト入力エラー: ${error.message}`;
+    return;
+  }
+  if (parsed.notes.length === 0 && parsed.rests.length === 0) return;
+  mutate("Enter phrase text", () => {
+    project.notes.push(...parsed.notes);
+    project.rests.push(...parsed.rests);
+    project.selectedIds = parsed.notes.map((note) => note.id);
+    project.selectedBars = [];
+    project.cursorTick = parsed.endTick;
+  });
+  els.phraseInput.value = "";
 }
 
 function loadDemoPhrase() {

@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const serverPath = join(here, "..", "mcp", "server.js");
+
+// Drive the stdio JSON-RPC server: send a request, await the response with the
+// matching id. Notifications (no id) get no reply.
+function startServer() {
+  const child = spawn(process.execPath, [serverPath], { stdio: ["pipe", "pipe", "inherit"] });
+  const pending = new Map();
+  let buffer = "";
+  child.stdout.on("data", (chunk) => {
+    buffer += chunk.toString();
+    let nl;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line) continue;
+      const msg = JSON.parse(line);
+      if (msg.id !== undefined && pending.has(msg.id)) {
+        pending.get(msg.id)(msg);
+        pending.delete(msg.id);
+      }
+    }
+  });
+  let nextId = 1;
+  const request = (method, params) => new Promise((resolve) => {
+    const id = nextId++;
+    pending.set(id, resolve);
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+  });
+  return { child, request, stop: () => child.kill() };
+}
+
+test("MCP server: initialize, tools/list, and render_midi round-trip", async () => {
+  const server = startServer();
+  try {
+    const init = await server.request("initialize", { protocolVersion: "2024-11-05", capabilities: {} });
+    assert.equal(init.result.serverInfo.name, "phrase-expression-designer");
+    assert.equal(init.result.protocolVersion, "2024-11-05");
+
+    const list = await server.request("tools/list", {});
+    const names = list.result.tools.map((t) => t.name);
+    assert.ok(names.includes("render_midi"));
+    assert.ok(names.includes("enter_notes"));
+    assert.ok(names.includes("list_engines"));
+
+    const rendered = await server.request("tools/call", { name: "render_midi", arguments: { phrase: "4 C D E" } });
+    const midi = Buffer.from(rendered.result.content[0].text, "base64");
+    assert.equal(midi.subarray(0, 4).toString("ascii"), "MThd");
+
+    const engines = await server.request("tools/call", { name: "list_engines", arguments: {} });
+    assert.ok(JSON.parse(engines.result.content[0].text).some((e) => e.id === "opus"));
+
+    const bad = await server.request("tools/call", { name: "nope", arguments: {} });
+    assert.equal(bad.result.isError, true);
+  } finally {
+    server.stop();
+  }
+});
