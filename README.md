@@ -106,6 +106,13 @@ npm test
   `calibration` array). Assigned per midiCC control (6th wizard column);
   unknown curve ids are flagged in validation. Default profiles stay linear, so
   existing output is unchanged
+- Auto-calibration (loopback): `Auto-Calibrate` sweeps the intensity CC on a
+  held note via Web MIDI while capturing the looped-back audio (getUserMedia +
+  Web Audio RMS), measures the library's loudness response per step, fits a
+  calibration curve that linearises it, and stores it on the profile — closing
+  the calibration loop without hand-drawing curves. Needs a loopback audio
+  device (e.g. BlackHole) routing the instrument's output back to an input. The
+  measure/fit math is pure and unit-tested; the audio capture is browser-only
 - Instrument Profile JSON import/export
 - Built-in Opus, 8Dio/Kontakt, and Logic Preset instrument profiles
 - Engine-specific Setup Wizards (EastWest Opus / Kontakt·8Dio / Logic): pick an

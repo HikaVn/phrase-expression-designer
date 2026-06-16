@@ -263,6 +263,17 @@ textarea:focus {
   accent-color: var(--accent);
 }
 
+.calib-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.calib-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .interp-details summary {
   cursor: pointer;
   font-size: 12px;

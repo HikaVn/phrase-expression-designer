@@ -5,6 +5,9 @@ import {
   BUILT_IN_CALIBRATION_CURVES,
   getCalibrationCurve,
   applyCalibration,
+  buildCalibrationProbe,
+  reduceCalibrationMeasurement,
+  fitCalibrationCurve,
   ENGINE_WIZARDS,
   engineWizardById,
   buildEngineProfile,
@@ -832,6 +835,52 @@ test("createDemoPhraseProject is a valid, interpretable A/B subject", () => {
 function getProfileForDemo(project) {
   return BUILT_IN_PROFILES.find((p) => p.id === project.profileId) ?? BUILT_IN_PROFILES[0];
 }
+
+test("buildCalibrationProbe sweeps CC on a held note with matching windows", () => {
+  const probe = buildCalibrationProbe({ cc: 1, pitch: 60, steps: 8, dwellMs: 200, leadMs: 100 });
+  assert.equal(probe.messages[0].bytes[0] & 0xf0, 0x90); // noteOn first
+  assert.equal(probe.messages.at(-1).bytes[0] & 0xf0, 0x80); // noteOff last
+  const ccMsgs = probe.messages.filter((m) => (m.bytes[0] & 0xf0) === 0xb0);
+  assert.equal(ccMsgs.length, 8);
+  assert.equal(ccMsgs[0].bytes[1], 1); // cc number
+  assert.equal(ccMsgs[0].bytes[2], 0); // first step = 0
+  assert.equal(ccMsgs.at(-1).bytes[2], 127); // last step = full
+  assert.equal(probe.windows.length, 8);
+  // times are non-decreasing and bytes valid
+  let last = -1;
+  probe.messages.forEach((m) => { assert.ok(m.timeMs >= last); last = m.timeMs; assert.ok(m.bytes.every((b) => b >= 0 && b <= 0xff)); });
+});
+
+test("reduceCalibrationMeasurement skips the window front and averages RMS", () => {
+  const windows = [{ value01: 0, startMs: 0, endMs: 100 }];
+  // loud attack in the first 40%, settles to 0.1 after
+  const samples = [
+    { timeMs: 10, rms: 0.9 }, { timeMs: 30, rms: 0.9 },
+    { timeMs: 50, rms: 0.1 }, { timeMs: 70, rms: 0.1 }, { timeMs: 90, rms: 0.1 }
+  ];
+  const [m] = reduceCalibrationMeasurement(samples, windows, { skipFraction: 0.4 });
+  assert.ok(Math.abs(m.rms - 0.1) < 1e-9, "attack transient is skipped");
+  assert.equal(m.value01, 0);
+});
+
+test("fitCalibrationCurve inverts the measured response to linearise it", () => {
+  // A library whose normalized loudness grows as cc^2: to get loudness x you
+  // must drive cc = sqrt(x), so the fitted curve should map 0.25 -> ~0.5.
+  const measured = [0, 0.25, 0.5, 0.75, 1].map((v) => ({ value01: v, level: v * v }));
+  const curve = fitCalibrationCurve(measured, { id: "m", outPoints: 9 });
+  assert.ok(Math.abs(applyCalibration(curve, 0.25) - 0.5) < 0.05);
+  // monotonic, spans the unit square
+  const outs = curve.points.map((p) => p.out);
+  assert.deepEqual(outs, [...outs].sort((a, b) => a - b));
+  assert.equal(curve.points[0].in, 0);
+  assert.equal(curve.points.at(-1).in, 1);
+});
+
+test("fitCalibrationCurve falls back to linear on flat or degenerate input", () => {
+  assert.deepEqual(fitCalibrationCurve([{ value01: 0, level: -40 }, { value01: 1, level: -40 }]).points,
+    [{ in: 0, out: 0 }, { in: 1, out: 1 }]);
+  assert.deepEqual(fitCalibrationCurve([]).points, [{ in: 0, out: 0 }, { in: 1, out: 1 }]);
+});
 
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {
   const profile = buildEngineProfile("kontakt");

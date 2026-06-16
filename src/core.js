@@ -196,6 +196,83 @@ export function applyCalibration(curve, value) {
   return x;
 }
 
+// --- Auto-calibration (measure a library's response, fit a curve) ---------
+// A loopback workflow: send a CC sweep on a held note, capture the audio it
+// produces, measure loudness per step, then fit a calibration curve that
+// linearises the perceived response. The three pieces below are pure and
+// testable; the audio capture itself lives in the browser layer.
+
+// A held note plus a CC stepped 0..127 across `steps`, each dwelt `dwellMs`.
+// Returns timed playable messages and the analysis windows (which input value
+// each time span corresponds to).
+export function buildCalibrationProbe({ cc = 1, pitch = 60, velocity = 100, steps = 16, dwellMs = 300, leadMs = 250, channel = 0 } = {}) {
+  const ch = channel & 0x0f;
+  const messages = [{ timeMs: 0, bytes: [0x90 | ch, pitch, velocity] }];
+  const windows = [];
+  for (let i = 0; i < steps; i += 1) {
+    const value01 = steps === 1 ? 1 : i / (steps - 1);
+    const startMs = leadMs + i * dwellMs;
+    messages.push({ timeMs: startMs, bytes: [0xb0 | ch, cc, Math.round(value01 * 127)] });
+    windows.push({ value01, startMs, endMs: startMs + dwellMs });
+  }
+  const totalMs = leadMs + steps * dwellMs + 120;
+  messages.push({ timeMs: totalMs, bytes: [0x80 | ch, pitch, 0] });
+  return { totalMs, cc, messages, windows };
+}
+
+// Reduce captured RMS-over-time samples to one loudness level per probe window,
+// skipping the front of each window so transitions/attacks don't bias the mean.
+export function reduceCalibrationMeasurement(samples, windows, { skipFraction = 0.4 } = {}) {
+  return windows.map((window) => {
+    const span = window.endMs - window.startMs;
+    const from = window.startMs + span * clamp(skipFraction, 0, 0.9);
+    const inWindow = (samples ?? []).filter((s) => Number.isFinite(s?.rms) && s.timeMs >= from && s.timeMs <= window.endMs);
+    const meanRms = inWindow.length ? inWindow.reduce((sum, s) => sum + s.rms, 0) / inWindow.length : 0;
+    return { value01: window.value01, rms: meanRms, level: 20 * Math.log10(Math.max(meanRms, 1e-6)), count: inWindow.length };
+  });
+}
+
+// Fit a calibration curve that linearises the measured response: the curve maps
+// the requested internal value x to the CC fraction that yields a perceptually
+// even step. Robust to noise (monotonic envelope) and flat/degenerate input.
+export function fitCalibrationCurve(measured, { id = "measured", name = "Measured", outPoints = 9 } = {}) {
+  const linear = { id, name, points: [{ in: 0, out: 0 }, { in: 1, out: 1 }] };
+  const pts = (measured ?? [])
+    .filter((m) => Number.isFinite(m?.value01) && Number.isFinite(m?.level))
+    .sort((a, b) => a.value01 - b.value01);
+  if (pts.length < 2) return linear;
+  // Monotonic non-decreasing level envelope (tames measurement noise).
+  let run = -Infinity;
+  const mono = pts.map((p) => {
+    run = Math.max(run, p.level);
+    return { value01: clamp(p.value01, 0, 1), level: run };
+  });
+  const lo = mono[0].level;
+  const hi = mono[mono.length - 1].level;
+  if (hi - lo < 1e-6) return linear; // flat response -> nothing to correct
+  const normalized = mono.map((p) => ({ value01: p.value01, n: clamp((p.level - lo) / (hi - lo), 0, 1) }));
+  const invert = (x) => {
+    if (x <= normalized[0].n) return normalized[0].value01;
+    if (x >= normalized[normalized.length - 1].n) return normalized[normalized.length - 1].value01;
+    for (let i = 0; i < normalized.length - 1; i += 1) {
+      const a = normalized[i];
+      const b = normalized[i + 1];
+      if (x >= a.n && x <= b.n) {
+        const t = b.n === a.n ? 0 : (x - a.n) / (b.n - a.n);
+        return clamp(a.value01 + (b.value01 - a.value01) * t, 0, 1);
+      }
+    }
+    return x;
+  };
+  const count = Math.max(2, Math.round(outPoints));
+  const points = [];
+  for (let i = 0; i < count; i += 1) {
+    const x = i / (count - 1);
+    points.push({ in: x, out: invert(x) });
+  }
+  return { id, name, points };
+}
+
 // Engine-specific Setup Wizards. Each wizard carries a richer preset *menu*
 // than the shipped built-in profiles: the user picks which articulations and
 // controls their patch actually has, and the wizard builds a validated profile

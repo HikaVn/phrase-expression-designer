@@ -186,6 +186,11 @@
               Profile読込
             </label>
             <button id="wizardButton" type="button">Setup Wizard</button>
+            <div class="calib-row">
+              <select id="audioInputSelect" aria-label="オーディオ入力"></select>
+              <button id="calibrateButton" type="button" title="ループバック音声から intensity(CC1) を自動校正">Auto-Calibrate</button>
+            </div>
+            <p class="block-hint" id="calibStatus">ループバック音声(BlackHole等)→入力選択→Auto-Calibrate で intensity を実測校正</p>
           </section>
 
           <section class="inspector-block">

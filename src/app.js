@@ -38,6 +38,9 @@ import {
   generateCcEvents,
   generateMidiEventList,
   generatePlaybackMessages,
+  buildCalibrationProbe,
+  reduceCalibrationMeasurement,
+  fitCalibrationCurve,
   getArticulation,
   importMidi,
   mixedValue,
@@ -121,6 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   render();
   initMidi();
+  populateAudioInputs();
 });
 
 function bindElements() {
@@ -164,6 +168,9 @@ function bindElements() {
     "eventListBody",
     "profileSelect",
     "wizardButton",
+    "audioInputSelect",
+    "calibrateButton",
+    "calibStatus",
     "batchSummary",
     "applyPitch",
     "pitchInput",
@@ -318,6 +325,7 @@ function bindEvents() {
   });
   els.testToneButton.addEventListener("click", sendTestTone);
   els.demoButton.addEventListener("click", loadDemoPhrase);
+  els.calibrateButton.addEventListener("click", runAutoCalibration);
   els.profileSelect.addEventListener("change", () => mutate("Change profile", () => {
     project.profileId = els.profileSelect.value;
     normalizeArticulationsForProfile();
@@ -1860,6 +1868,100 @@ function loadDemoPhrase() {
     project = createDemoPhraseProject(profileId);
   }, { replaceProject: true });
   els.statusText.textContent = "デモ譜を読み込みました（解釈ON）。Live MIDIで▶、解釈チェックやループ・内訳ダイヤルで聴き比べてください。";
+}
+
+// --- Auto-calibration (loopback) -----------------------------------------
+// Sweep the intensity CC on a held note, capture the looped-back audio, measure
+// loudness per step, fit a curve that linearises the response, and store it on
+// the active profile. Browser-only (Web MIDI out + getUserMedia/Web Audio in).
+
+async function populateAudioInputs() {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    els.audioInputSelect.disabled = true;
+    els.calibrateButton.disabled = true;
+    return;
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((d) => d.kind === "audioinput");
+    els.audioInputSelect.replaceChildren(
+      option("", inputs.length ? "既定の入力" : "入力なし"),
+      ...inputs.map((d, i) => option(d.deviceId, d.label || `入力 ${i + 1}`))
+    );
+  } catch (error) {
+    els.audioInputSelect.disabled = true;
+  }
+}
+
+function setCalibStatus(text) {
+  if (els.calibStatus) els.calibStatus.textContent = text;
+  els.statusText.textContent = text;
+}
+
+async function runAutoCalibration() {
+  if (!midiOutput) {
+    setCalibStatus("出力先(IAC)を選択してください");
+    return;
+  }
+  const profile = activeProfile();
+  const control = profile.controls.find((c) => c.internalParameter === "intensity" && c.target?.type === "midiCC");
+  if (!control) {
+    setCalibStatus("intensityのmidiCC制御がProfileにありません");
+    return;
+  }
+  let stream;
+  try {
+    const deviceId = els.audioInputSelect.value;
+    stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true });
+  } catch (error) {
+    setCalibStatus(`オーディオ入力にアクセスできません: ${error.message}`);
+    return;
+  }
+  populateAudioInputs(); // labels are available once permission is granted
+
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AudioCtx();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const buffer = new Float32Array(analyser.fftSize);
+
+  const probe = buildCalibrationProbe({ cc: control.target.cc, pitch: 60, velocity: 100, steps: 16, dwellMs: 300 });
+  const sendBase = performance.now() + PLAYBACK_LEAD_MS;
+  const samples = [];
+  els.calibrateButton.disabled = true;
+  setCalibStatus("計測中… 音を鳴らしています");
+  const interval = setInterval(() => {
+    analyser.getFloatTimeDomainData(buffer);
+    let sum = 0;
+    for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
+    samples.push({ timeMs: performance.now() - sendBase, rms: Math.sqrt(sum / buffer.length) });
+  }, 20);
+  probe.messages.forEach((m) => midiOutput.send(m.bytes, sendBase + m.timeMs));
+
+  await new Promise((resolve) => setTimeout(resolve, PLAYBACK_LEAD_MS + probe.totalMs + 200));
+  clearInterval(interval);
+  midiOutput.clear?.();
+  midiOutput.send([0xb0, 120, 0]);
+  midiOutput.send([0xb0, 123, 0]);
+  stream.getTracks().forEach((t) => t.stop());
+  ctx.close?.();
+  els.calibrateButton.disabled = false;
+
+  const measured = reduceCalibrationMeasurement(samples, probe.windows);
+  const levels = measured.map((m) => m.level).filter(Number.isFinite);
+  const span = levels.length ? Math.max(...levels) - Math.min(...levels) : 0;
+  if (span < 3) {
+    setCalibStatus(`応答を検出できません (${span.toFixed(1)}dB)。ループバック配線/入力を確認してください`);
+    return;
+  }
+  const curveId = `measured_${control.internalParameter}`;
+  const curve = fitCalibrationCurve(measured, { id: curveId, name: `Measured ${control.internalParameter}` });
+  profile.calibration = [...(profile.calibration ?? []).filter((c) => c.id !== curveId), curve];
+  control.calibrationCurveId = curveId;
+  saveAutosave();
+  render();
+  setCalibStatus(`校正完了: ${control.label} (レンジ ${span.toFixed(1)}dB / ${measured.length}点)`);
 }
 
 function downloadJson(data, filename) {
