@@ -14,7 +14,10 @@ import {
   beamGroups,
   applySelectedNoteDuration,
   computePerformanceNotes,
+  computeInterpretation,
+  DEFAULT_INTERPRETATION,
   copySelection,
+  createNote,
   createInitialProject,
   deleteCurvePoint,
   deleteSelection,
@@ -649,6 +652,61 @@ test("generatePlaybackMessages drops file meta and time-stamps playable bytes", 
   assert.equal(noteOns.length, project.notes.length);
   assert.deepEqual(noteOns.map((m) => m.bytes[1]), [60, 62, 64, 67]);
   assert.equal(noteOns[0].timeMs, 0);
+});
+
+function twoPhraseProject() {
+  const project = createInitialProject();
+  // phrase 1: 60, 72(apex), 64 contiguous; gap 1440..1920; phrase 2: 62, 65
+  project.notes = [
+    createNote({ pitch: 60, scoreTick: 0, durationTicks: 480 }),
+    createNote({ pitch: 72, scoreTick: 480, durationTicks: 480 }),
+    createNote({ pitch: 64, scoreTick: 960, durationTicks: 480 }),
+    createNote({ pitch: 62, scoreTick: 1920, durationTicks: 480 }),
+    createNote({ pitch: 65, scoreTick: 2400, durationTicks: 480 })
+  ];
+  return project;
+}
+
+test("interpretation is off by default and adds nothing", () => {
+  const project = createInitialProject();
+  assert.equal(project.interpretation.enabled, false);
+  assert.equal(computeInterpretation(project).size, 0);
+});
+
+test("interpretation shapes phrases: apex tenuto, breath, deterministic", () => {
+  const project = twoPhraseProject();
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true, humanizeMs: 0 };
+  const map = computeInterpretation(project);
+  assert.equal(map.size, 5);
+  const apex = project.notes[1]; // pitch 72, highest in phrase 1
+  assert.ok(map.get(apex.id).durationMs > 0, "apex note is lengthened");
+  assert.ok(map.get(project.notes[3].id).onsetMs > 0, "breath delays the new phrase");
+  assert.equal(map.get(project.notes[0].id).onsetMs, 0, "first note of first phrase has no breath");
+  // re-run is identical (reproducible performance)
+  assert.equal(computeInterpretation(project).get(apex.id).durationMs, map.get(apex.id).durationMs);
+});
+
+test("interpretation amount 0 (or off) yields no adjustment", () => {
+  const project = twoPhraseProject();
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true, amount: 0 };
+  assert.equal(computeInterpretation(project).size, 0);
+});
+
+test("computePerformanceNotes folds in interpretation when enabled", () => {
+  const project = twoPhraseProject();
+  const off = computePerformanceNotes(project);
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true, humanizeMs: 0 };
+  const on = computePerformanceNotes(project);
+  assert.ok(on[3].performanceStartTick > off[3].performanceStartTick, "phrase-2 start is delayed by a breath");
+  assert.ok(on[1].performanceDurationTicks > off[1].performanceDurationTicks, "apex note rings longer");
+});
+
+test("interpretation leaves frozen notes pinned", () => {
+  const project = twoPhraseProject();
+  project.notes[3].frozenPerformanceTick = 2000;
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true };
+  const performance = computePerformanceNotes(project);
+  assert.equal(performance[3].performanceStartTick, 2000);
 });
 
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {

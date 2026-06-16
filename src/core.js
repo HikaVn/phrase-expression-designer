@@ -356,6 +356,21 @@ export function buildEngineProfile(wizardId, selection = {}) {
   };
 }
 
+// Interpretation = the "retained performer". A steerable layer that derives
+// the micro-decisions a real player makes (phrase shaping, agogics, breath,
+// human imperfection) from the score itself, written as timing/duration
+// nudges on top of the score — never altering the notated values. Disabled by
+// default so the engine stays a faithful transcoder until you ask for a player.
+export const DEFAULT_INTERPRETATION = {
+  enabled: false,
+  amount: 1,        // overall strength 0..1 (the main dial)
+  breathMs: 45,     // luft/breath before a new phrase
+  apexTenutoMs: 60, // lengthen the phrase apex (peak) note
+  finalRelaxMs: 30, // relax (delay) the phrase-final note
+  humanizeMs: 8,    // deterministic +/- onset jitter ("alive", reproducible)
+  seed: 1
+};
+
 export function createInitialProject() {
   return {
     schemaVersion: "0.1.0",
@@ -388,7 +403,8 @@ export function createInitialProject() {
       phraseFlow: { parameter: "phraseFlow", points: [{ tick: 0, value: 0.2 }, { tick: 1920, value: 0.85 }, { tick: 3840, value: 0.25 }] }
     },
     profileId: "opus_hollywood_strings",
-    trackTimingOffsetMs: 0
+    trackTimingOffsetMs: 0,
+    interpretation: { ...DEFAULT_INTERPRETATION }
   };
 }
 
@@ -994,20 +1010,89 @@ export function nextNote(project, note) {
   return [...project.notes].sort((a, b) => a.scoreTick - b.scoreTick).find((candidate) => candidate.scoreTick > note.scoreTick) ?? null;
 }
 
+// Small deterministic PRNG so "human" jitter is alive but reproducible
+// (and testable). Same seed + note order => same performance.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Split the notes into phrases: a new phrase starts wherever a gap (a rest, or
+// any silence) separates a note from the previous note's end.
+function segmentPhrases(notes) {
+  const sorted = [...notes].sort((a, b) => a.scoreTick - b.scoreTick || a.pitch - b.pitch);
+  const phrases = [];
+  let current = null;
+  sorted.forEach((note) => {
+    if (current && note.scoreTick <= current.end + 1) {
+      current.notes.push(note);
+      current.end = Math.max(current.end, note.scoreTick + note.durationTicks);
+    } else {
+      current = { notes: [note], end: note.scoreTick + note.durationTicks };
+      phrases.push(current);
+    }
+  });
+  return phrases.map((phrase) => phrase.notes);
+}
+
+// The performer's micro-decisions, derived from the score. Returns a map of
+// noteId -> { onsetMs, durationMs } nudges. Pure; does not mutate the project.
+export function computeInterpretation(project, settings = project.interpretation) {
+  const result = new Map();
+  if (!settings || !settings.enabled) return result;
+  const amount = clamp(Number(settings.amount ?? 1), 0, 1);
+  if (amount === 0) return result;
+  const breathMs = (settings.breathMs ?? 0) * amount;
+  const apexTenutoMs = (settings.apexTenutoMs ?? 0) * amount;
+  const finalRelaxMs = (settings.finalRelaxMs ?? 0) * amount;
+  const humanizeMs = (settings.humanizeMs ?? 0) * amount;
+  const rng = mulberry32(settings.seed ?? 1);
+  segmentPhrases(project.notes).forEach((phrase, phraseIndex) => {
+    // Apex = the phrase's peak: highest pitch, breaking ties toward the louder
+    // (then earlier) note — the note a player naturally leans on.
+    let apex = phrase[0];
+    phrase.forEach((note) => {
+      if (note.pitch > apex.pitch || (note.pitch === apex.pitch && (note.velocity ?? 0) > (apex.velocity ?? 0))) apex = note;
+    });
+    phrase.forEach((note, index) => {
+      let onsetMs = 0;
+      let durationMs = 0;
+      if (index === 0 && phraseIndex > 0) onsetMs += breathMs;        // breath into a new phrase
+      if (index === phrase.length - 1) {                              // relax + linger at the close
+        onsetMs += finalRelaxMs;
+        durationMs += apexTenutoMs * 0.5;
+      }
+      if (note === apex) durationMs += apexTenutoMs;                  // agogic lean on the peak
+      onsetMs += (rng() * 2 - 1) * humanizeMs;                        // human imperfection
+      result.set(note.id, { onsetMs, durationMs });
+    });
+  });
+  return result;
+}
+
 export function computePerformanceNotes(project, profile = getProfile(project)) {
+  const interpretation = computeInterpretation(project);
   return project.notes.map((note) => {
     const art = getArticulation(profile, note.articulation);
     const performance = art?.performance ?? {};
+    // Frozen (user-pinned) notes opt out of interpretation.
+    const interp = (note.frozenPerformanceTick == null && interpretation.get(note.id)) || { onsetMs: 0, durationMs: 0 };
     const offsetMs =
       (profile.timing?.trackOffsetMs ?? 0) +
       (project.trackTimingOffsetMs ?? 0) +
       (performance.globalOffsetMs ?? 0) +
       (note.phraseOffsetMs ?? 0) +
       (note.localStartOffsetMs ?? 0) +
-      (note.humanizeMs ?? 0);
+      (note.humanizeMs ?? 0) +
+      interp.onsetMs;
     const startTick = note.frozenPerformanceTick ?? note.scoreTick + msToTick(offsetMs, project.tempoMap, project.ppq, note.scoreTick);
     const overlapMs = art?.type === "legato" ? Math.min((tickToMs(note.durationTicks, [{ tick: 0, bpm: bpmAtTick(note.scoreTick, project.tempoMap) }], project.ppq) * (performance.overlapPercent ?? 0)) / 100, performance.overlapMaxMs ?? 0) : 0;
-    const endOffsetTick = msToTick((note.localEndOffsetMs ?? 0) + overlapMs + (note.localDurationOffsetMs ?? 0), project.tempoMap, project.ppq, note.scoreTick + note.durationTicks);
+    const endOffsetTick = msToTick((note.localEndOffsetMs ?? 0) + overlapMs + (note.localDurationOffsetMs ?? 0) + interp.durationMs, project.tempoMap, project.ppq, note.scoreTick + note.durationTicks);
     const durationTicks = Math.max(1, note.durationTicks + endOffsetTick);
     return { ...note, performanceStartTick: Math.max(0, startTick), performanceDurationTicks: durationTicks, articulationName: art?.name ?? note.articulation };
   });

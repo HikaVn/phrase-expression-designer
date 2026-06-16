@@ -1,5 +1,6 @@
 import {
   BUILT_IN_PROFILES,
+  DEFAULT_INTERPRETATION,
   ENGINE_WIZARDS,
   engineWizardById,
   buildEngineProfile,
@@ -191,6 +192,9 @@ function bindElements() {
     "noteExprInfluenceOut",
     "noteExprApplyButton",
     "noteExprClearButton",
+    "interpEnabled",
+    "interpAmount",
+    "interpAmountOut",
     "clefSelect",
     "keySelect"
   ].forEach((id) => {
@@ -376,6 +380,19 @@ function bindEvents() {
     const parameter = els.noteExprParameter.value;
     mutate(`Clear note ${parameter}`, () =>
       setNoteExpression(project, { parameter, value: null }));
+  });
+  els.interpEnabled.addEventListener("change", () => {
+    mutate(els.interpEnabled.checked ? "Enable interpretation" : "Disable interpretation", () => {
+      project.interpretation = { ...DEFAULT_INTERPRETATION, ...(project.interpretation ?? {}), enabled: els.interpEnabled.checked };
+    });
+  });
+  els.interpAmount.addEventListener("input", () => {
+    els.interpAmountOut.textContent = `${els.interpAmount.value}%`;
+  });
+  els.interpAmount.addEventListener("change", () => {
+    mutate(`Interpretation ${els.interpAmount.value}%`, () => {
+      project.interpretation = { ...DEFAULT_INTERPRETATION, ...(project.interpretation ?? {}), amount: Number(els.interpAmount.value) / 100 };
+    });
   });
   document.addEventListener("keydown", onKeyDown);
 }
@@ -1035,6 +1052,13 @@ function renderInspector() {
   } else if (notes.length > 0) {
     els.noteExprInfluenceOut.textContent = "Mixed";
   }
+
+  // Interpretation (the retained performer) reflects project state.
+  const interpretation = { ...DEFAULT_INTERPRETATION, ...(project.interpretation ?? {}) };
+  els.interpEnabled.checked = interpretation.enabled;
+  const interpPercent = Math.round(clamp(interpretation.amount, 0, 1) * 100);
+  els.interpAmount.value = String(interpPercent);
+  els.interpAmountOut.textContent = `${interpPercent}%`;
 }
 
 function syncDurationSelect() {
@@ -1859,6 +1883,7 @@ function normalizeProject(input) {
     slurs: Array.isArray(input.slurs) ? input.slurs : [],
     crescendos: Array.isArray(input.crescendos) ? input.crescendos : [],
     expressionCurves: input.expressionCurves ?? base.expressionCurves,
+    interpretation: { ...base.interpretation, ...(input.interpretation ?? {}) },
     selectedIds: [],
     selectedBars: [],
     cursorTick: Number(input.cursorTick ?? 0),

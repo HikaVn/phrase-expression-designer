@@ -58,6 +58,14 @@ npm test
 - Two independent expression layers: the phrase curve and per-note values
   (Note Expression panel). Output mixes them per note with a continuous
   influence amount — 0% = phrase only, 100% = the note's value wins
+- Interpretation engine (the "retained performer"): an optional, steerable
+  layer that derives a player's micro-decisions from the score — phrase-apex
+  agogic lengthening, a breath before each new phrase, phrase-final relaxation,
+  and deterministic (reproducible) human timing jitter. It writes timing/
+  duration nudges on top of the score (the notation is never altered),
+  recomputes live as you edit, opts out of frozen notes, and is driven by a
+  single strength dial (off by default). Flows straight into the piano roll,
+  MIDI export, and live output
 - Hairpins start from the level actually sounding, aim at the next written
   dynamic (or move two steps), and merge into the existing intensity curve
   instead of replacing it
