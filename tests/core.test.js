@@ -741,6 +741,33 @@ test("performanceVelocity equals the notated velocity when interpretation is off
   assert.deepEqual(perf.map((n) => n.performanceVelocity), project.notes.map((n) => n.velocity));
 });
 
+test("legato leaps are reached for more than steps (context-dependent onset)", () => {
+  const project = createInitialProject();
+  project.notes = [
+    createNote({ pitch: 60, scoreTick: 0, durationTicks: 480, articulation: "legato" }),
+    createNote({ pitch: 62, scoreTick: 480, durationTicks: 480, articulation: "legato" }),  // step (+2)
+    createNote({ pitch: 74, scoreTick: 960, durationTicks: 480, articulation: "legato" }),  // leap (+12)
+    createNote({ pitch: 75, scoreTick: 1440, durationTicks: 480, articulation: "legato" })  // last
+  ];
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true, humanizeMs: 0 };
+  const map = computeInterpretation(project, project.interpretation, BUILT_IN_PROFILES[0]);
+  // notes[1] and notes[2] are both mid-phrase, so onset is the legato reach only.
+  assert.ok(map.get(project.notes[2].id).onsetMs > map.get(project.notes[1].id).onsetMs,
+    "the octave leap is reached for more than the step");
+});
+
+test("legato reach does not apply to non-legato articulations", () => {
+  const project = createInitialProject();
+  project.notes = [
+    createNote({ pitch: 60, scoreTick: 0, durationTicks: 480, articulation: "sustain" }),
+    createNote({ pitch: 74, scoreTick: 480, durationTicks: 480, articulation: "sustain" }), // big leap, but not legato
+    createNote({ pitch: 75, scoreTick: 960, durationTicks: 480, articulation: "sustain" })
+  ];
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true, humanizeMs: 0 };
+  const map = computeInterpretation(project, project.interpretation, BUILT_IN_PROFILES[0]);
+  assert.equal(map.get(project.notes[1].id).onsetMs, 0); // mid-phrase, sustain -> no reach
+});
+
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {
   const profile = buildEngineProfile("kontakt");
   assert.ok(profile.controls.every((control) => control.target.type === "midiLearnRequired"));

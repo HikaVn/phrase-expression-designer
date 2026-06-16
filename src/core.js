@@ -371,6 +371,7 @@ export const DEFAULT_INTERPRETATION = {
   swell: 12,        // velocity arch depth: lift toward the apex, ease the edges
   accent: 8,        // metrical accent: strong beats louder, offbeats softer
   humanizeVel: 4,   // deterministic +/- velocity jitter
+  legatoReachMs: 18,// legato leaps are "reached for": delay grows with interval
   seed: 1
 };
 
@@ -1046,7 +1047,7 @@ function segmentPhrases(notes) {
 // The performer's micro-decisions, derived from the score. Returns a map of
 // noteId -> { onsetMs, durationMs, velocityDelta } nudges. Pure; does not
 // mutate the project.
-export function computeInterpretation(project, settings = project.interpretation) {
+export function computeInterpretation(project, settings = project.interpretation, profile = getProfile(project)) {
   const result = new Map();
   if (!settings || !settings.enabled) return result;
   const amount = clamp(Number(settings.amount ?? 1), 0, 1);
@@ -1055,6 +1056,7 @@ export function computeInterpretation(project, settings = project.interpretation
   const apexTenutoMs = (settings.apexTenutoMs ?? 0) * amount;
   const finalRelaxMs = (settings.finalRelaxMs ?? 0) * amount;
   const humanizeMs = (settings.humanizeMs ?? 0) * amount;
+  const legatoReachMs = (settings.legatoReachMs ?? 0) * amount;
   const swell = settings.swell ?? 0;
   const accent = settings.accent ?? 0;
   const humanizeVel = settings.humanizeVel ?? 0;
@@ -1078,6 +1080,12 @@ export function computeInterpretation(project, settings = project.interpretation
         durationMs += apexTenutoMs * 0.5;
       }
       if (index === apexIndex) durationMs += apexTenutoMs;            // agogic lean on the peak
+      // Legato leaps take longer to traverse: a connected (legato) note is
+      // "reached for" in proportion to the interval from the previous note.
+      if (index > 0 && getArticulation(profile, note.articulation)?.type === "legato") {
+        const interval = Math.abs(note.pitch - phrase[index - 1].pitch);
+        onsetMs += legatoReachMs * Math.min(1, interval / 12);
+      }
       onsetMs += (rng() * 2 - 1) * humanizeMs;                        // human onset imperfection
 
       // Velocity: a phrase arch (peak at the apex, eased at the edges) plus a
@@ -1114,7 +1122,7 @@ function metricalAccent(scoreTick, ticksPerBar, ppq, beatTol, accent) {
 }
 
 export function computePerformanceNotes(project, profile = getProfile(project)) {
-  const interpretation = computeInterpretation(project);
+  const interpretation = computeInterpretation(project, project.interpretation, profile);
   return project.notes.map((note) => {
     const art = getArticulation(profile, note.articulation);
     const performance = art?.performance ?? {};
