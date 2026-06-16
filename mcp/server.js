@@ -10,6 +10,7 @@
 // IAC bus, or a bridge to the browser app's Web MIDI output) — the next step.
 
 import { createInterface } from "node:readline";
+import { createServer } from "node:http";
 import {
   ENGINE_WIZARDS,
   buildEngineProfile,
@@ -20,6 +21,46 @@ import {
 
 const SERVER_INFO = { name: "phrase-expression-designer", version: "0.1.0" };
 const DEFAULT_PROTOCOL = "2024-11-05";
+
+// --- Live bridge -----------------------------------------------------------
+// A tiny localhost HTTP queue. The browser app short-polls GET /poll and plays
+// any command it receives through its (already working) Web MIDI output, so
+// play_phrase/stop reach a real instrument in real time. The browser is the
+// MIDI "hands"; this process is the brain an agent talks to.
+const BRIDGE_PORT = Number(process.env.PED_BRIDGE_PORT ?? 4274);
+const commandQueue = [];
+let clientSeen = false;
+
+const bridge = createServer((req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "content-type");
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+  const url = new URL(req.url, "http://127.0.0.1");
+  if (req.method === "GET" && url.pathname === "/poll") {
+    clientSeen = true;
+    if (commandQueue.length > 0) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(commandQueue.shift()));
+    } else {
+      res.writeHead(204);
+      res.end();
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/health") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, queued: commandQueue.length, clientSeen }));
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+bridge.on("error", (error) => process.stderr.write(`bridge: ${error.message}\n`));
+if (BRIDGE_PORT > 0) bridge.listen(BRIDGE_PORT, "127.0.0.1");
 
 const TOOLS = [
   {
@@ -63,6 +104,24 @@ const TOOLS = [
       },
       required: ["engine"]
     }
+  },
+  {
+    name: "play_phrase",
+    description: "Queue a phrase for live playback through the connected browser bridge (Web MIDI -> e.g. IAC -> Logic). Open the app and enable the Bridge to hear it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        phrase: { type: "string", description: "The text phrase to play." },
+        profileId: { type: "string" },
+        loop: { type: "boolean", description: "Loop the phrase until stopped." }
+      },
+      required: ["phrase"]
+    }
+  },
+  {
+    name: "stop",
+    description: "Stop live playback on the connected browser bridge.",
+    inputSchema: { type: "object", properties: {} }
   }
 ];
 
@@ -81,6 +140,14 @@ function callTool(name, args = {}) {
       return text(JSON.stringify(ENGINE_WIZARDS.map((w) => ({ id: w.id, label: w.label, engine: w.engine })), null, 2));
     case "build_profile":
       return text(JSON.stringify(buildEngineProfile(args.engine, { library: args.library, patch: args.patch }), null, 2));
+    case "play_phrase": {
+      const project = projectFromPhrase(args.phrase, { profileId: args.profileId });
+      commandQueue.push({ type: "play", project, loop: Boolean(args.loop) });
+      return text(`Queued ${project.notes.length} notes for live playback. ${clientSeen ? "Browser bridge is connected." : "Open the app and enable the Bridge to hear it."}`);
+    }
+    case "stop":
+      commandQueue.push({ type: "stop" });
+      return text("Queued stop.");
     default:
       throw new Error(`Unknown tool: ${name}`);
   }

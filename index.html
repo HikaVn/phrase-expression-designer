@@ -119,6 +119,11 @@
               <label class="loop-label"><input id="loopToggle" type="checkbox"> Loop</label>
               <button id="testToneButton" type="button" title="テスト音(C4)を送出し配線を確認">テスト音</button>
               <output id="midiStatusOutput">—</output>
+              <label class="loop-label" title="MCPサーバからの遠隔再生コマンドを受信">
+                <input id="bridgeToggle" type="checkbox"> Bridge
+              </label>
+              <input id="bridgePort" type="number" min="1" max="65535" value="4274" title="MCPブリッジのポート" style="width:5em">
+              <output id="bridgeStatus">未接続</output>
             </div>
           </section>
 

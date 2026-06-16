@@ -80,6 +80,10 @@ let midiOutput = null;
 let playbackTimer = null;
 let isPlaying = false;
 let loopEnabled = false;
+let playbackMessagesFn = null;
+let playbackLoop = false;
+let bridgeTimer = null;
+let bridgePollUrl = null;
 let interpDialEls = {};
 const PLAYBACK_LEAD_MS = 120;
 const AUTOSAVE_KEY = "phraseExpressionDesigner.autosave.v1";
@@ -158,6 +162,9 @@ function bindElements() {
     "loopToggle",
     "testToneButton",
     "demoButton",
+    "bridgeToggle",
+    "bridgePort",
+    "bridgeStatus",
     "midiStatusOutput",
     "cursorOutput",
     "selectionOutput",
@@ -335,6 +342,7 @@ function bindEvents() {
   });
   els.testToneButton.addEventListener("click", sendTestTone);
   els.demoButton.addEventListener("click", loadDemoPhrase);
+  els.bridgeToggle.addEventListener("change", toggleBridge);
   els.calibrateButton.addEventListener("click", runAutoCalibration);
   els.profileSelect.addEventListener("change", () => mutate("Change profile", () => {
     project.profileId = els.profileSelect.value;
@@ -1812,16 +1820,18 @@ function startLivePlayback() {
     return;
   }
   stopLivePlayback();
+  playbackMessagesFn = () => generatePlaybackMessages(project, activeProfile());
+  playbackLoop = loopEnabled;
   isPlaying = true;
   els.playButton.classList.add("active");
   scheduleCycle();
 }
 
-// Schedule one pass; when looping, re-generate from the current project each
-// cycle so tweaking the dials / interpretation toggle is heard on the next loop.
+// Schedule one pass; when looping, re-generate each cycle so tweaking the dials
+// / interpretation toggle is heard on the next loop.
 function scheduleCycle() {
-  if (!isPlaying || !midiOutput) return;
-  const messages = generatePlaybackMessages(project, activeProfile());
+  if (!isPlaying || !midiOutput || !playbackMessagesFn) return;
+  const messages = playbackMessagesFn();
   if (messages.length === 0) {
     els.midiStatusOutput.textContent = "再生するイベントがありません";
     stopLivePlayback();
@@ -1833,9 +1843,9 @@ function scheduleCycle() {
     midiOutput.send(message.bytes, startAt + message.timeMs);
     endMs = Math.max(endMs, message.timeMs);
   });
-  els.midiStatusOutput.textContent = loopEnabled ? "ループ再生中…" : "再生中…";
+  els.midiStatusOutput.textContent = playbackLoop ? "ループ再生中…" : "再生中…";
   const total = PLAYBACK_LEAD_MS + endMs;
-  if (loopEnabled) {
+  if (playbackLoop) {
     playbackTimer = setTimeout(scheduleCycle, total + 350); // small luft between loops
   } else {
     playbackTimer = setTimeout(stopLivePlayback, total + 250);
@@ -1899,6 +1909,84 @@ function loadDemoPhrase() {
     project = createDemoPhraseProject(profileId);
   }, { replaceProject: true });
   els.statusText.textContent = "デモ譜を読み込みました（解釈ON）。Live MIDIで▶、解釈チェックやループ・内訳ダイヤルで聴き比べてください。";
+}
+
+// Play an externally-delivered project (from the MCP bridge) without disturbing
+// the editor's own project — just routes it through the same Web MIDI transport.
+function playDeliveredProject(delivered, loop) {
+  if (!midiOutput) {
+    els.midiStatusOutput.textContent = "出力先(IAC)未選択：ブリッジ再生不可";
+    return;
+  }
+  let target;
+  try {
+    target = normalizeProject(delivered);
+  } catch (error) {
+    els.midiStatusOutput.textContent = `ブリッジ受信エラー: ${error.message}`;
+    return;
+  }
+  const profile = profileById(target.profileId) ?? activeProfile();
+  stopLivePlayback();
+  playbackMessagesFn = () => generatePlaybackMessages(target, profile);
+  playbackLoop = Boolean(loop);
+  isPlaying = true;
+  els.playButton.classList.add("active");
+  scheduleCycle();
+}
+
+// --- MCP live bridge (browser side): short-poll the local MCP server for
+// play/stop commands and route them through Web MIDI. -----------------------
+function toggleBridge() {
+  if (els.bridgeToggle.checked) startBridgePolling();
+  else stopBridgePolling();
+}
+
+function startBridgePolling() {
+  const port = Number(els.bridgePort.value) || 4274;
+  bridgePollUrl = `http://localhost:${port}/poll`;
+  setBridgeStatus("接続中…");
+  pollBridge();
+}
+
+function stopBridgePolling() {
+  if (bridgeTimer) {
+    clearTimeout(bridgeTimer);
+    bridgeTimer = null;
+  }
+  setBridgeStatus("未接続");
+}
+
+async function pollBridge() {
+  if (!els.bridgeToggle.checked) return;
+  try {
+    const res = await fetch(bridgePollUrl, { cache: "no-store" });
+    if (res.status === 200) {
+      const command = await res.json();
+      handleBridgeCommand(command);
+    } else {
+      setBridgeStatus("接続OK（待機中）");
+    }
+  } catch (error) {
+    setBridgeStatus(`未接続（MCPサーバ起動？）`);
+  }
+  if (els.bridgeToggle.checked) bridgeTimer = setTimeout(pollBridge, 250);
+}
+
+function handleBridgeCommand(command) {
+  if (!command || typeof command !== "object") return;
+  if (command.type === "stop") {
+    stopLivePlayback();
+    setBridgeStatus("受信: stop");
+    return;
+  }
+  if (command.type === "play" && command.project) {
+    playDeliveredProject(command.project, command.loop);
+    setBridgeStatus(`受信: play (${command.project.notes?.length ?? 0}音)`);
+  }
+}
+
+function setBridgeStatus(text) {
+  if (els.bridgeStatus) els.bridgeStatus.textContent = text;
 }
 
 // --- Auto-calibration (loopback) -----------------------------------------

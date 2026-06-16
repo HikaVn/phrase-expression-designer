@@ -9,8 +9,11 @@ const serverPath = join(here, "..", "mcp", "server.js");
 
 // Drive the stdio JSON-RPC server: send a request, await the response with the
 // matching id. Notifications (no id) get no reply.
-function startServer() {
-  const child = spawn(process.execPath, [serverPath], { stdio: ["pipe", "pipe", "inherit"] });
+function startServer(bridgePort = 0) {
+  const child = spawn(process.execPath, [serverPath], {
+    stdio: ["pipe", "pipe", "inherit"],
+    env: { ...process.env, PED_BRIDGE_PORT: String(bridgePort) }
+  });
   const pending = new Map();
   let buffer = "";
   child.stdout.on("data", (chunk) => {
@@ -58,6 +61,48 @@ test("MCP server: initialize, tools/list, and render_midi round-trip", async () 
 
     const bad = await server.request("tools/call", { name: "nope", arguments: {} });
     assert.equal(bad.result.isError, true);
+  } finally {
+    server.stop();
+  }
+});
+
+async function fetchWithRetry(url, attempts = 30) {
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      return res;
+    } catch {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+  throw new Error(`unreachable: ${url}`);
+}
+
+test("MCP bridge: play_phrase queues a command delivered over HTTP /poll", async () => {
+  const port = 47319;
+  const server = startServer(port);
+  try {
+    await server.request("initialize", { protocolVersion: "2024-11-05", capabilities: {} });
+    const health = await fetchWithRetry(`http://127.0.0.1:${port}/health`);
+    assert.equal(health.status, 200);
+
+    const queued = await server.request("tools/call", { name: "play_phrase", arguments: { phrase: "4 C D E", loop: true } });
+    assert.equal(queued.result.isError, undefined);
+
+    const poll = await fetch(`http://127.0.0.1:${port}/poll`, { cache: "no-store" });
+    assert.equal(poll.status, 200);
+    const command = await poll.json();
+    assert.equal(command.type, "play");
+    assert.equal(command.loop, true);
+    assert.equal(command.project.notes.length, 3);
+
+    // queue now empty -> 204
+    const empty = await fetch(`http://127.0.0.1:${port}/poll`, { cache: "no-store" });
+    assert.equal(empty.status, 204);
+
+    await server.request("tools/call", { name: "stop", arguments: {} });
+    const stopCmd = await (await fetch(`http://127.0.0.1:${port}/poll`, { cache: "no-store" })).json();
+    assert.equal(stopCmd.type, "stop");
   } finally {
     server.stop();
   }

@@ -34,7 +34,9 @@ npm test
 ## MCP server (agent control)
 
 A dependency-free reference MCP server lets an agent do note entry / MIDI
-rendering remotely by reusing the same pure core. See `mcp/README.md`.
+rendering remotely by reusing the same pure core, and — via a localhost bridge
+the app polls — trigger **live playback** through the app's Web MIDI output
+(`play_phrase` / `stop`; enable **Bridge** in the app). See `mcp/README.md`.
 
 ```bash
 node mcp/server.js
