@@ -74,8 +74,20 @@ let midiAccess = null;
 let midiOutput = null;
 let playbackTimer = null;
 let isPlaying = false;
+let interpDialEls = {};
 const PLAYBACK_LEAD_MS = 120;
 const AUTOSAVE_KEY = "phraseExpressionDesigner.autosave.v1";
+// Sub-dials that open the interpretation magic-numbers for live ear-tuning.
+const INTERPRETATION_DIALS = [
+  { key: "humanizeMs", label: "ゆらぎ(時間)", max: 30, unit: "ms" },
+  { key: "breathMs", label: "息継ぎ", max: 120, unit: "ms" },
+  { key: "apexTenutoMs", label: "頂点テヌート", max: 150, unit: "ms" },
+  { key: "finalRelaxMs", label: "終止の緩み", max: 120, unit: "ms" },
+  { key: "legatoReachMs", label: "レガート届かせ", max: 60, unit: "ms" },
+  { key: "swell", label: "強弱アーチ", max: 40, unit: "" },
+  { key: "accent", label: "拍節アクセント", max: 30, unit: "" },
+  { key: "humanizeVel", label: "ゆらぎ(強弱)", max: 20, unit: "" }
+];
 
 const svgNs = "http://www.w3.org/2000/svg";
 const NOTE_HEAD_RX = 8.4;
@@ -103,6 +115,7 @@ document.addEventListener("DOMContentLoaded", () => {
   populateTemplateButtons();
   populateNoteExpressionParameters();
   populateEngineWizards();
+  populateInterpretationDials();
   bindEvents();
   render();
   initMidi();
@@ -195,6 +208,7 @@ function bindElements() {
     "interpEnabled",
     "interpAmount",
     "interpAmountOut",
+    "interpDials",
     "clefSelect",
     "keySelect"
   ].forEach((id) => {
@@ -569,6 +583,36 @@ function populateEngineWizards() {
     button.textContent = wizard.label;
     button.addEventListener("click", () => selectEngineWizard(wizard.id));
     return button;
+  }));
+}
+
+// Build the interpretation sub-dials once; renderInspector syncs their values.
+function populateInterpretationDials() {
+  interpDialEls = {};
+  els.interpDials.replaceChildren(...INTERPRETATION_DIALS.map((dial) => {
+    const row = document.createElement("div");
+    row.className = "influence-row";
+    const label = document.createElement("label");
+    label.textContent = dial.label;
+    label.setAttribute("for", `interpDial_${dial.key}`);
+    const input = document.createElement("input");
+    input.type = "range";
+    input.id = `interpDial_${dial.key}`;
+    input.min = "0";
+    input.max = String(dial.max);
+    input.step = "1";
+    const out = document.createElement("output");
+    input.addEventListener("input", () => {
+      out.textContent = `${input.value}${dial.unit}`;
+    });
+    input.addEventListener("change", () => {
+      mutate(`Interpretation ${dial.key} ${input.value}`, () => {
+        project.interpretation = { ...DEFAULT_INTERPRETATION, ...(project.interpretation ?? {}), [dial.key]: Number(input.value) };
+      });
+    });
+    row.append(label, input, out);
+    interpDialEls[dial.key] = { input, out, unit: dial.unit };
+    return row;
   }));
 }
 
@@ -1059,6 +1103,11 @@ function renderInspector() {
   const interpPercent = Math.round(clamp(interpretation.amount, 0, 1) * 100);
   els.interpAmount.value = String(interpPercent);
   els.interpAmountOut.textContent = `${interpPercent}%`;
+  Object.entries(interpDialEls).forEach(([key, { input, out, unit }]) => {
+    const value = Math.round(interpretation[key] ?? 0);
+    input.value = String(value);
+    out.textContent = `${value}${unit}`;
+  });
 }
 
 function syncDurationSelect() {
