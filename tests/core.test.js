@@ -25,6 +25,7 @@ import {
   parsePhrase,
   projectFromPhrase,
   getSetupGuide,
+  runSetupDiagnostics,
   DEFAULT_INTERPRETATION,
   copySelection,
   createNote,
@@ -935,6 +936,26 @@ test("getSetupGuide returns runnable commands, urls, and adapts to the DAW/goal"
     getSetupGuide({ daw: "logic" }).steps.find((s) => s.id === "instrument").detail);
   // playback goal drops the calibration-only steps
   assert.ok(!getSetupGuide({ goal: "playback" }).steps.some((s) => s.id === "blackhole"));
+});
+
+test("runSetupDiagnostics flags blockers and clears when ready", () => {
+  const empty = runSetupDiagnostics({});
+  assert.equal(empty.ready, false);
+  assert.equal(empty.checks.find((c) => c.id === "web-midi").ok, false);
+
+  const ready = runSetupDiagnostics({ webMidiAvailable: true, midiOutputNames: ["IAC Driver Bus 1"] });
+  assert.equal(ready.ready, true, "Web MIDI + an IAC output is enough to play");
+  assert.equal(ready.checks.find((c) => c.id === "midi-bus").ok, true);
+
+  // An output that isn't an IAC/virtual bus is a (blocking) miss.
+  const noBus = runSetupDiagnostics({ webMidiAvailable: true, midiOutputNames: ["USB Keyboard"] });
+  assert.equal(noBus.checks.find((c) => c.id === "midi-bus").ok, false);
+  assert.equal(noBus.ready, false);
+
+  // Bridge/audio are optional: their failure does not block readiness.
+  const withBridge = runSetupDiagnostics({ webMidiAvailable: true, midiOutputNames: ["IAC Bus"], bridgeReachable: false });
+  assert.ok(withBridge.checks.some((c) => c.id === "bridge"));
+  assert.equal(withBridge.ready, true);
 });
 
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {

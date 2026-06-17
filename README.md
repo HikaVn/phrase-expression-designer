@@ -110,7 +110,10 @@ node mcp/server.js
   track, app, live bridge, and loopback calibration) with copy-able commands
   (`brew install blackhole-2ch`, `npm start`, `node mcp/server.js`) and official
   links — to cut the one-time physical setup to copy-paste + a few clicks. Same
-  `getSetupGuide` the MCP `get_setup_guide` tool serves
+  `getSetupGuide` the MCP `get_setup_guide` tool serves. A **接続診断** button
+  auto-checks the live chain (Web MIDI / IAC-or-virtual bus / audio input /
+  bridge) and reports exactly which link is missing and how to fix it
+  (`runSetupDiagnostics`)
 - Demo phrase (`デモ譜`): one click loads a lyrical two-phrase line built to
   show off the interpretation engine (legato ascent → apex leap → breath →
   falling answer, with an intensity arch), interpretation on — a consistent

@@ -1695,6 +1695,27 @@ export function getSetupGuide({ os = "mac", daw = "logic", goal = "all" } = {}) 
   return { os, daw, goal, steps };
 }
 
+// Auto-diagnose the live setup so the user doesn't debug by hand: given what
+// the browser can see (Web MIDI availability, the MIDI output names, audio
+// inputs, optional bridge reachability), report pass/fail checks with the fix.
+// Pure; the browser collects the environment and renders the result.
+export function runSetupDiagnostics({ webMidiAvailable = false, midiOutputNames = [], audioInputCount = 0, bridgeReachable = null } = {}) {
+  const names = Array.isArray(midiOutputNames) ? midiOutputNames : [];
+  const hasOutput = names.length > 0;
+  const hasBus = names.some((n) => /IAC|virtual|Phrase Expression/i.test(String(n)));
+  const checks = [
+    { id: "web-midi", label: "Web MIDI 利用可能", ok: Boolean(webMidiAvailable), fix: "Chrome/Edge で localhost から開く（Safari・file: は不可）" },
+    { id: "midi-output", label: "MIDI出力先あり", ok: hasOutput, fix: "IACドライバを有効化（セットアップ手順参照）" },
+    { id: "midi-bus", label: "IAC/仮想バスを検出", ok: hasOutput && hasBus, fix: "出力先に IAC Driver（または仮想MIDIポート）を用意する" },
+    { id: "audio-input", label: "オーディオ入力あり（校正用）", ok: audioInputCount > 0, optional: true, fix: "校正には BlackHole 等のループバック入力が必要" }
+  ];
+  if (bridgeReachable !== null) {
+    checks.push({ id: "bridge", label: "MCPブリッジ接続", ok: Boolean(bridgeReachable), optional: true, fix: "node mcp/server.js を起動し、ポートを一致させる" });
+  }
+  const blocking = checks.filter((check) => !check.ok && !check.optional);
+  return { checks, okCount: checks.filter((c) => c.ok).length, total: checks.length, ready: blocking.length === 0 };
+}
+
 export function exportMidi(project, profile = getProfile(project)) {
   const events = generateMidiEventList(project, profile);
   const track = buildTrack(events);

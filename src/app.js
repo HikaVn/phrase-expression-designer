@@ -31,6 +31,7 @@ import {
   createInitialProject,
   createDemoPhraseProject,
   getSetupGuide,
+  runSetupDiagnostics,
   createSetupReport,
   createTestProject,
   deleteCurvePoint,
@@ -167,6 +168,8 @@ function bindElements() {
     "setupDialog",
     "setupDawSelect",
     "setupSteps",
+    "setupDiagnoseButton",
+    "setupDiagnostics",
     "bridgeToggle",
     "bridgePort",
     "bridgeStatus",
@@ -349,6 +352,7 @@ function bindEvents() {
   els.demoButton.addEventListener("click", loadDemoPhrase);
   els.setupButton.addEventListener("click", openSetup);
   els.setupDawSelect.addEventListener("change", renderSetupSteps);
+  els.setupDiagnoseButton.addEventListener("click", runDiagnostics);
   els.bridgeToggle.addEventListener("change", toggleBridge);
   els.calibrateButton.addEventListener("click", runAutoCalibration);
   els.profileSelect.addEventListener("change", () => mutate("Change profile", () => {
@@ -1957,6 +1961,45 @@ function renderSetupSteps() {
     }
     return li;
   }));
+}
+
+// Gather what the browser can see and run the pure diagnostics, so the user
+// learns exactly which link in the chain is missing (and the fix).
+async function runDiagnostics() {
+  const webMidiAvailable = Boolean(midiAccess) || Boolean(navigator.requestMIDIAccess);
+  const midiOutputNames = midiAccess ? [...midiAccess.outputs.values()].map((o) => o.name ?? o.id) : [];
+  let audioInputCount = 0;
+  try {
+    const devices = (await navigator.mediaDevices?.enumerateDevices?.()) ?? [];
+    audioInputCount = devices.filter((d) => d.kind === "audioinput").length;
+  } catch (error) {
+    audioInputCount = 0;
+  }
+  let bridgeReachable = null;
+  if (els.bridgeToggle.checked) {
+    bridgeReachable = false;
+    try {
+      const res = await fetch(`http://localhost:${Number(els.bridgePort.value) || 4274}/health`, { cache: "no-store" });
+      bridgeReachable = res.ok;
+    } catch (error) {
+      bridgeReachable = false;
+    }
+  }
+  renderDiagnostics(runSetupDiagnostics({ webMidiAvailable, midiOutputNames, audioInputCount, bridgeReachable }));
+}
+
+function renderDiagnostics(result) {
+  els.setupDiagnostics.replaceChildren(...result.checks.map((check) => {
+    const li = document.createElement("li");
+    li.className = check.ok ? "diag-ok" : (check.optional ? "diag-warn" : "diag-err");
+    const mark = check.ok ? "✓" : (check.optional ? "△" : "✗");
+    li.textContent = check.ok ? `${mark} ${check.label}` : `${mark} ${check.label} — ${check.fix}`;
+    return li;
+  }));
+  const summary = document.createElement("li");
+  summary.className = result.ready ? "diag-ok" : "diag-err";
+  summary.textContent = result.ready ? "▶ 再生できる状態です" : "再生に必要な項目が不足しています";
+  els.setupDiagnostics.append(summary);
 }
 
 function loadDemoPhrase() {

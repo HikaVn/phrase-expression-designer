@@ -301,14 +301,18 @@
           <button value="cancel" type="submit">閉じる</button>
         </header>
         <div class="setup-body">
-          <label class="setup-daw">DAW
-            <select id="setupDawSelect">
-              <option value="logic">Logic Pro</option>
-              <option value="reaper">Reaper</option>
-              <option value="ableton">Ableton Live</option>
-              <option value="other">その他</option>
-            </select>
-          </label>
+          <div class="setup-head">
+            <label class="setup-daw">DAW
+              <select id="setupDawSelect">
+                <option value="logic">Logic Pro</option>
+                <option value="reaper">Reaper</option>
+                <option value="ableton">Ableton Live</option>
+                <option value="other">その他</option>
+              </select>
+            </label>
+            <button id="setupDiagnoseButton" type="button">接続診断</button>
+          </div>
+          <ul id="setupDiagnostics" class="diag-list"></ul>
           <ol id="setupSteps" class="setup-steps"></ol>
         </div>
       </form>

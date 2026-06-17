@@ -330,6 +330,38 @@ textarea:focus {
   color: var(--accent-3);
 }
 
+.setup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.diag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.diag-list:empty {
+  display: none;
+}
+
+.diag-list .diag-ok {
+  color: var(--accent);
+}
+
+.diag-list .diag-warn {
+  color: var(--warn);
+}
+
+.diag-list .diag-err {
+  color: var(--error);
+}
+
 .interp-details summary {
   cursor: pointer;
   font-size: 12px;
