@@ -106,6 +106,11 @@ node mcp/server.js
   tweaks are heard on the next pass — live A/B tuning), and a **test-tone**
   button to confirm routing before judging. Requires Chrome/Edge over https or
   localhost
+- Setup guide (`セットアップ`): a curated, DAW-aware step-by-step (IAC, DAW
+  track, app, live bridge, and loopback calibration) with copy-able commands
+  (`brew install blackhole-2ch`, `npm start`, `node mcp/server.js`) and official
+  links — to cut the one-time physical setup to copy-paste + a few clicks. Same
+  `getSetupGuide` the MCP `get_setup_guide` tool serves
 - Demo phrase (`デモ譜`): one click loads a lyrical two-phrase line built to
   show off the interpretation engine (legato ascent → apex leap → breath →
   falling answer, with an intensity arch), interpretation on — a consistent

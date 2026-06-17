@@ -59,6 +59,9 @@ test("MCP server: initialize, tools/list, and render_midi round-trip", async () 
     const engines = await server.request("tools/call", { name: "list_engines", arguments: {} });
     assert.ok(JSON.parse(engines.result.content[0].text).some((e) => e.id === "opus"));
 
+    const guide = await server.request("tools/call", { name: "get_setup_guide", arguments: { daw: "logic" } });
+    assert.ok(JSON.parse(guide.result.content[0].text).steps.some((s) => s.id === "iac"));
+
     const bad = await server.request("tools/call", { name: "nope", arguments: {} });
     assert.equal(bad.result.isError, true);
   } finally {

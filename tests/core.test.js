@@ -24,6 +24,7 @@ import {
   createDemoPhraseProject,
   parsePhrase,
   projectFromPhrase,
+  getSetupGuide,
   DEFAULT_INTERPRETATION,
   copySelection,
   createNote,
@@ -917,6 +918,23 @@ test("projectFromPhrase builds a playable project", () => {
   assert.equal(project.notes.length, 5);
   assert.equal(project.cursorTick, project.notes.reduce((m, n) => Math.max(m, n.scoreTick + n.durationTicks), 0));
   assert.ok(generateMidiEventList(project).some((e) => e.type === "noteOn"));
+});
+
+test("getSetupGuide returns runnable commands, urls, and adapts to the DAW/goal", () => {
+  const guide = getSetupGuide();
+  assert.equal(guide.daw, "logic");
+  const ids = guide.steps.map((s) => s.id);
+  assert.ok(ids.includes("iac") && ids.includes("connect") && ids.includes("blackhole"));
+  // a runnable command is surfaced as-is
+  assert.ok(guide.steps.find((s) => s.id === "blackhole").command.includes("brew install blackhole-2ch"));
+  assert.ok(guide.steps.find((s) => s.id === "serve").command === "npm start");
+  // every URL (when present) is a real https/app link
+  assert.ok(guide.steps.every((s) => !s.url || /^https?:\/\//.test(s.url)));
+  // DAW-specific instrument note
+  assert.notEqual(getSetupGuide({ daw: "reaper" }).steps.find((s) => s.id === "instrument").detail,
+    getSetupGuide({ daw: "logic" }).steps.find((s) => s.id === "instrument").detail);
+  // playback goal drops the calibration-only steps
+  assert.ok(!getSetupGuide({ goal: "playback" }).steps.some((s) => s.id === "blackhole"));
 });
 
 test("buildEngineProfile for Kontakt uses MIDI Learn controls", () => {

@@ -16,7 +16,8 @@ import {
   buildEngineProfile,
   projectFromPhrase,
   exportMidi,
-  getProfile
+  getProfile,
+  getSetupGuide
 } from "../src/core.js";
 
 const SERVER_INFO = { name: "phrase-expression-designer", version: "0.1.0" };
@@ -122,6 +123,17 @@ const TOOLS = [
     name: "stop",
     description: "Stop live playback on the connected browser bridge.",
     inputSchema: { type: "object", properties: {} }
+  },
+  {
+    name: "get_setup_guide",
+    description: "Curated step-by-step setup (IAC, DAW, app, bridge, loopback calibration) with runnable commands and official links. Adapts to daw/goal.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        daw: { type: "string", description: "logic|reaper|ableton|other (default logic)." },
+        goal: { type: "string", description: "all|playback (default all)." }
+      }
+    }
   }
 ];
 
@@ -148,6 +160,8 @@ function callTool(name, args = {}) {
     case "stop":
       commandQueue.push({ type: "stop" });
       return text("Queued stop.");
+    case "get_setup_guide":
+      return text(JSON.stringify(getSetupGuide({ daw: args.daw, goal: args.goal }), null, 2));
     default:
       throw new Error(`Unknown tool: ${name}`);
   }

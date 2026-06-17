@@ -19,6 +19,7 @@
             Project読込
           </label>
           <button id="exportProjectButton" type="button">Project保存</button>
+          <button id="setupButton" type="button" title="鳴らすためのセットアップ手順（IAC/DAW/校正）">セットアップ</button>
           <button id="demoButton" type="button" title="試聴用デモ譜を読み込む（解釈ON）">デモ譜</button>
           <label class="file-button">
             <input id="midiImportInput" type="file" accept=".mid,.midi,audio/midi">
@@ -292,6 +293,26 @@
       <input id="dynamicInput" type="text" autocomplete="off" spellcheck="false"
         placeholder="p / mf / ff / &lt; / &gt;">
     </div>
+
+    <dialog id="setupDialog" class="wizard-dialog">
+      <form method="dialog" class="wizard-form">
+        <header class="wizard-header">
+          <h2>セットアップ手順</h2>
+          <button value="cancel" type="submit">閉じる</button>
+        </header>
+        <div class="setup-body">
+          <label class="setup-daw">DAW
+            <select id="setupDawSelect">
+              <option value="logic">Logic Pro</option>
+              <option value="reaper">Reaper</option>
+              <option value="ableton">Ableton Live</option>
+              <option value="other">その他</option>
+            </select>
+          </label>
+          <ol id="setupSteps" class="setup-steps"></ol>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="wizardDialog" class="wizard-dialog">
       <form method="dialog" class="wizard-form">

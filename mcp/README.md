@@ -21,6 +21,7 @@ Add it to an MCP client (e.g. Claude Code) as a stdio server pointing at
 | `stop` | — | stops live playback on the bridge |
 | `list_engines` | — | engine wizard ids/labels (Opus / Kontakt·8Dio / Logic) |
 | `build_profile` | `engine`, `library?`, `patch?` | a validated instrument profile JSON |
+| `get_setup_guide` | `daw?`, `goal?` | curated setup steps (IAC / DAW / app / bridge / loopback) with runnable commands + official links |
 
 Phrase syntax: sticky durations (`1 2 4 8 16 32 64`, dots ok), letters `A–G`
 placed in the octave nearest the previous note (or explicit scientific octave,
@@ -52,3 +53,25 @@ disturbing the project you're editing.
 - `render_midi` remains available for a file-based workflow (hand you a `.mid`).
 - This is a minimal reference implementation of the protocol; for production use
   the official MCP SDK.
+
+## Setup guide & (planned) agent-assisted refresh
+
+`get_setup_guide` returns a **curated, version-pinned** guide (also shown in the
+app via the **セットアップ** button) — instant, offline, with runnable commands
+(`brew install blackhole-2ch`, `npm start`, `node mcp/server.js`) and official
+links. This is the reliable default.
+
+A planned **opt-in refresh** would keep it current without manual research: a
+local helper spawns an agent CLI headlessly with a web-fetch MCP to read the
+official docs and diff them against the curated guide, e.g.
+
+```
+claude -p "Verify these macOS IAC / BlackHole / Logic setup steps against the
+official docs and report any changes" --output-format json --allowedTools WebFetch
+```
+
+It is intentionally **not wired up yet**: it needs the CLI installed + auth +
+network + cost, and can't be verified in CI, so we ship the curated guide and
+keep the agent for maintenance. Reduce manual work further by *executing* the
+scriptable steps (brew install) and by giving the bridge process its own virtual
+MIDI port (removing the IAC step entirely) — both follow-on tasks.

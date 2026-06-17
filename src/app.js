@@ -30,6 +30,7 @@ import {
   copySelection,
   createInitialProject,
   createDemoPhraseProject,
+  getSetupGuide,
   createSetupReport,
   createTestProject,
   deleteCurvePoint,
@@ -162,6 +163,10 @@ function bindElements() {
     "loopToggle",
     "testToneButton",
     "demoButton",
+    "setupButton",
+    "setupDialog",
+    "setupDawSelect",
+    "setupSteps",
     "bridgeToggle",
     "bridgePort",
     "bridgeStatus",
@@ -342,6 +347,8 @@ function bindEvents() {
   });
   els.testToneButton.addEventListener("click", sendTestTone);
   els.demoButton.addEventListener("click", loadDemoPhrase);
+  els.setupButton.addEventListener("click", openSetup);
+  els.setupDawSelect.addEventListener("change", renderSetupSteps);
   els.bridgeToggle.addEventListener("change", toggleBridge);
   els.calibrateButton.addEventListener("click", runAutoCalibration);
   els.profileSelect.addEventListener("change", () => mutate("Change profile", () => {
@@ -1901,6 +1908,55 @@ function enterPhraseText() {
     project.cursorTick = parsed.endTick;
   });
   els.phraseInput.value = "";
+}
+
+// Curated setup guide (IAC / DAW / app / bridge / loopback), rendered from the
+// pure getSetupGuide — runnable commands get a copy button, refs get a link.
+function openSetup() {
+  renderSetupSteps();
+  if (typeof els.setupDialog.showModal === "function") els.setupDialog.showModal();
+  else els.setupDialog.setAttribute("open", "");
+}
+
+function renderSetupSteps() {
+  const guide = getSetupGuide({ daw: els.setupDawSelect.value });
+  els.setupSteps.replaceChildren(...guide.steps.map((step) => {
+    const li = document.createElement("li");
+    li.className = "setup-step";
+    const title = document.createElement("div");
+    title.className = "setup-step-title";
+    title.textContent = step.title;
+    const detail = document.createElement("p");
+    detail.className = "setup-step-detail";
+    detail.textContent = step.detail;
+    li.append(title, detail);
+    if (step.command) {
+      const row = document.createElement("div");
+      row.className = "setup-cmd";
+      const code = document.createElement("code");
+      code.textContent = step.command;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "コピー";
+      copy.addEventListener("click", () => {
+        navigator.clipboard?.writeText(step.command);
+        copy.textContent = "コピー済";
+        setTimeout(() => { copy.textContent = "コピー"; }, 1200);
+      });
+      row.append(code, copy);
+      li.append(row);
+    }
+    if (step.url) {
+      const link = document.createElement("a");
+      link.href = step.url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.className = "setup-link";
+      link.textContent = step.url.startsWith("http") ? "公式/リンクを開く" : step.url;
+      li.append(link);
+    }
+    return li;
+  }));
 }
 
 function loadDemoPhrase() {

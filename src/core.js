@@ -1626,6 +1626,75 @@ export function projectFromPhrase(text, { profileId, ...options } = {}) {
   return project;
 }
 
+// Curated setup steps to get sound out of this (silent) app via an external
+// instrument: the commands that can be run as-is, plus official references.
+// Reduces the manual "physical setup" to copy-paste + a few GUI clicks. The
+// agent-assisted refresh (fetch official docs and diff) is a separate, opt-in
+// layer documented in mcp/README.md.
+const SETUP_DAW_NOTE = {
+  logic: "Logicで弦音源トラックを作り、入力をIACに、録音待機/モニタONにする（IACのMIDIを受ける状態に）。",
+  reaper: "Reaperで弦音源トラックを作り、入力をIAC(All MIDI)に、Record monitorをONにする。",
+  ableton: "Liveで弦音源トラックを作り、MIDI From をIACに、Monitor=In/Auto にする。",
+  other: "DAWで弦音源トラックを作り、MIDI入力をIACに割り当て、入力をモニタできる状態にする。"
+};
+
+export function getSetupGuide({ os = "mac", daw = "logic", goal = "all" } = {}) {
+  const dawNote = SETUP_DAW_NOTE[daw] ?? SETUP_DAW_NOTE.other;
+  const steps = [
+    {
+      id: "iac",
+      title: "仮想MIDIバス(IAC)を有効化",
+      detail: "「Audio MIDI設定」→ ウィンドウ → MIDIスタジオ → IACドライバをダブルクリック →「装置はオンライン」にチェック。",
+      url: "https://support.apple.com/guide/audio-midi-setup/welcome/mac"
+    },
+    {
+      id: "instrument",
+      title: "DAWで音源トラックを用意",
+      detail: dawNote,
+      url: daw === "logic" ? "https://support.apple.com/logic-pro" : null
+    },
+    {
+      id: "serve",
+      title: "アプリを起動",
+      detail: "リポジトリ直下で起動し、Chrome/Edge で開く（localhost必須・Safari/file:不可）。",
+      command: "npm start",
+      url: "http://127.0.0.1:4273"
+    },
+    {
+      id: "connect",
+      title: "出力先IACを選び配線確認",
+      detail: "Live MIDIの出力先で IAC Driver Bus 1 を選び、「テスト音」を押す → DAWで1音鳴れば配線OK。",
+      url: null
+    },
+    {
+      id: "mcp",
+      title: "（任意）遠隔操作のMCPブリッジ",
+      detail: "MCPサーバを起動し、アプリで Bridge にチェック。MCPクライアントには stdioサーバとして登録する。",
+      command: "node mcp/server.js",
+      url: null
+    }
+  ];
+  if (goal !== "playback") {
+    steps.push(
+      {
+        id: "blackhole",
+        title: "（校正用）ループバック音声デバイスを導入",
+        detail: "DAWの出力をBlackHoleへ（同時に聴くなら BlackHole＋スピーカーの Multi-Output Device を作って出力先に）。",
+        command: "brew install blackhole-2ch",
+        url: "https://github.com/ExistentialAudio/BlackHole",
+        automatable: true
+      },
+      {
+        id: "calibrate",
+        title: "（校正用）Auto-Calibrate を実行",
+        detail: "Instrument Profile の入力で BlackHole を選び、Auto-Calibrate。intensityの応答を実測して曲線化する。",
+        url: null
+      }
+    );
+  }
+  return { os, daw, goal, steps };
+}
+
 export function exportMidi(project, profile = getProfile(project)) {
   const events = generateMidiEventList(project, profile);
   const track = buildTrack(events);
