@@ -720,6 +720,16 @@ test("interpretation leaves frozen notes pinned", () => {
   assert.equal(performance[3].performanceStartTick, 2000);
 });
 
+test("freezing pins timing only — velocity interpretation still applies", () => {
+  const project = createInitialProject();
+  project.notes = [createNote({ pitch: 60, scoreTick: 0, durationTicks: 480, velocity: 70 })]; // downbeat
+  project.notes[0].frozenPerformanceTick = 123;
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true, swell: 0, humanizeVel: 0 };
+  const performance = computePerformanceNotes(project, BUILT_IN_PROFILES[0]);
+  assert.equal(performance[0].performanceStartTick, 123, "timing stays pinned");
+  assert.ok(performance[0].performanceVelocity > 70, "downbeat accent still inflects the velocity");
+});
+
 test("interpretation accents strong beats louder than offbeats (velocityDelta)", () => {
   const project = createInitialProject();
   project.notes = [
@@ -884,6 +894,19 @@ test("fitCalibrationCurve falls back to linear on flat or degenerate input", () 
   assert.deepEqual(fitCalibrationCurve([{ value01: 0, level: -40 }, { value01: 1, level: -40 }]).points,
     [{ in: 0, out: 0 }, { in: 1, out: 1 }]);
   assert.deepEqual(fitCalibrationCurve([]).points, [{ in: 0, out: 0 }, { in: 1, out: 1 }]);
+});
+
+test("fitCalibrationCurve ignores empty (count 0) measurement windows", () => {
+  const withDropout = fitCalibrationCurve([
+    { value01: 0, level: -120, count: 0 }, // captured nothing -> must be ignored
+    { value01: 0.5, level: -20, count: 4 },
+    { value01: 1, level: -10, count: 4 }
+  ]);
+  const clean = fitCalibrationCurve([
+    { value01: 0.5, level: -20, count: 4 },
+    { value01: 1, level: -10, count: 4 }
+  ]);
+  assert.deepEqual(withDropout.points, clean.points);
 });
 
 test("parsePhrase: sticky duration, nearest-octave letters, ticks advance", () => {

@@ -2041,6 +2041,10 @@ function toggleBridge() {
 }
 
 function startBridgePolling() {
+  if (bridgeTimer) {
+    clearTimeout(bridgeTimer); // never run two poll loops at once
+    bridgeTimer = null;
+  }
   const port = Number(els.bridgePort.value) || 4274;
   bridgePollUrl = `http://localhost:${port}/poll`;
   setBridgeStatus("接続中…");
@@ -2137,34 +2141,39 @@ async function runAutoCalibration() {
   }
   populateAudioInputs(); // labels are available once permission is granted
 
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  const ctx = new AudioCtx();
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 2048;
-  ctx.createMediaStreamSource(stream).connect(analyser);
-  const buffer = new Float32Array(analyser.fftSize);
-
   const probe = buildCalibrationProbe({ cc: control.target.cc, pitch: 60, velocity: 100, steps: 16, dwellMs: 300 });
   const sendBase = performance.now() + PLAYBACK_LEAD_MS;
   const samples = [];
   els.calibrateButton.disabled = true;
   setCalibStatus("計測中… 音を鳴らしています");
-  const interval = setInterval(() => {
-    analyser.getFloatTimeDomainData(buffer);
-    let sum = 0;
-    for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
-    samples.push({ timeMs: performance.now() - sendBase, rms: Math.sqrt(sum / buffer.length) });
-  }, 20);
-  probe.messages.forEach((m) => midiOutput.send(m.bytes, sendBase + m.timeMs));
-
-  await new Promise((resolve) => setTimeout(resolve, PLAYBACK_LEAD_MS + probe.totalMs + 200));
-  clearInterval(interval);
-  midiOutput.clear?.();
-  midiOutput.send([0xb0, 120, 0]);
-  midiOutput.send([0xb0, 123, 0]);
-  stream.getTracks().forEach((t) => t.stop());
-  ctx.close?.();
-  els.calibrateButton.disabled = false;
+  // try/finally so a thrown send / closed port never leaks the sampling
+  // interval or leaves the button permanently disabled.
+  let interval = null;
+  let ctx = null;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    ctx = new AudioCtx();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    const buffer = new Float32Array(analyser.fftSize);
+    interval = setInterval(() => {
+      analyser.getFloatTimeDomainData(buffer);
+      let sum = 0;
+      for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
+      samples.push({ timeMs: performance.now() - sendBase, rms: Math.sqrt(sum / buffer.length) });
+    }, 20);
+    probe.messages.forEach((m) => midiOutput.send(m.bytes, sendBase + m.timeMs));
+    await new Promise((resolve) => setTimeout(resolve, PLAYBACK_LEAD_MS + probe.totalMs + 200));
+  } finally {
+    if (interval) clearInterval(interval);
+    midiOutput.clear?.();
+    midiOutput.send([0xb0, 120, 0]);
+    midiOutput.send([0xb0, 123, 0]);
+    stream.getTracks().forEach((t) => t.stop());
+    ctx?.close?.();
+    els.calibrateButton.disabled = false;
+  }
 
   const measured = reduceCalibrationMeasurement(samples, probe.windows);
   const levels = measured.map((m) => m.level).filter(Number.isFinite);

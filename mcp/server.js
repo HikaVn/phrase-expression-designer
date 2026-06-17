@@ -172,7 +172,9 @@ function text(value) {
 }
 
 function handle(message) {
+  if (!message || typeof message !== "object" || Array.isArray(message)) return null;
   const { id, method, params } = message;
+  if (id === undefined) return null; // notification — never reply
   if (method === "initialize") {
     return reply(id, {
       protocolVersion: params?.protocolVersion ?? DEFAULT_PROTOCOL,
@@ -189,8 +191,6 @@ function handle(message) {
     }
   }
   if (method === "ping") return reply(id, {});
-  if (typeof method === "string" && method.startsWith("notifications/")) return null; // notifications: no response
-  if (id === undefined) return null; // any other notification
   return { jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } };
 }
 

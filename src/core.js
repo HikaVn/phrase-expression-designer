@@ -238,7 +238,7 @@ export function reduceCalibrationMeasurement(samples, windows, { skipFraction = 
 export function fitCalibrationCurve(measured, { id = "measured", name = "Measured", outPoints = 9 } = {}) {
   const linear = { id, name, points: [{ in: 0, out: 0 }, { in: 1, out: 1 }] };
   const pts = (measured ?? [])
-    .filter((m) => Number.isFinite(m?.value01) && Number.isFinite(m?.level))
+    .filter((m) => Number.isFinite(m?.value01) && Number.isFinite(m?.level) && (m.count === undefined || m.count > 0))
     .sort((a, b) => a.value01 - b.value01);
   if (pts.length < 2) return linear;
   // Monotonic non-decreasing level envelope (tames measurement noise).
@@ -1244,7 +1244,12 @@ export function computePerformanceNotes(project, profile = getProfile(project)) 
     const art = getArticulation(profile, note.articulation);
     const performance = art?.performance ?? {};
     // Frozen (user-pinned) notes opt out of interpretation.
-    const interp = (note.frozenPerformanceTick == null && interpretation.get(note.id)) || { onsetMs: 0, durationMs: 0, velocityDelta: 0 };
+    // Freezing pins a note's timing only — its onset/duration opt out of
+    // interpretation, but the velocity arch/accent still applies.
+    const rawInterp = interpretation.get(note.id) || { onsetMs: 0, durationMs: 0, velocityDelta: 0 };
+    const interp = note.frozenPerformanceTick == null
+      ? rawInterp
+      : { onsetMs: 0, durationMs: 0, velocityDelta: rawInterp.velocityDelta };
     const offsetMs =
       (profile.timing?.trackOffsetMs ?? 0) +
       (project.trackTimingOffsetMs ?? 0) +
@@ -1306,24 +1311,33 @@ export function deleteCurvePoint(project, parameter, pointIndex) {
   return true;
 }
 
-export function generateCcEvents(project, profile = getProfile(project)) {
-  const events = [];
-  const performanceNotes = computePerformanceNotes(project, profile);
-  performanceNotes.forEach((note) => {
-    profile.controls.filter((control) => control.enabled && control.target?.type === "midiCC").forEach((control) => {
-      const lookAheadTick = Math.max(0, note.performanceStartTick - msToTickPrecise(profile.timing?.ccLookAheadMs ?? 80, project.tempoMap, project.ppq, note.performanceStartTick));
+// CC events for one already-computed performance note. Uses the note's
+// authoritative performanceStartTick, so the lookahead lines up with the real
+// note-on (callers must not re-derive timing from a single-note sub-project,
+// which would mis-handle phrase-context interpretation).
+function ccEventsForPerformanceNote(project, profile, note) {
+  const lookAheadTick = Math.max(0, note.performanceStartTick - msToTickPrecise(profile.timing?.ccLookAheadMs ?? 80, project.tempoMap, project.ppq, note.performanceStartTick));
+  return profile.controls
+    .filter((control) => control.enabled && control.target?.type === "midiCC")
+    .map((control) => {
       const raw = effectiveExpression(project, note, control.internalParameter);
       const curve = getCalibrationCurve(profile, control.calibrationCurveId);
       const calibrated = curve ? applyCalibration(curve, raw) : raw;
-      events.push({
+      return {
         tick: lookAheadTick,
         cc: control.target.cc,
         value: clamp(Math.round(calibrated * 127), 0, 127),
         parameter: control.internalParameter,
         label: control.label,
         noteId: note.id
-      });
+      };
     });
+}
+
+export function generateCcEvents(project, profile = getProfile(project)) {
+  const events = [];
+  computePerformanceNotes(project, profile).forEach((note) => {
+    events.push(...ccEventsForPerformanceNote(project, profile, note));
   });
   return events.sort((a, b) => a.tick - b.tick || a.cc - b.cc);
 }
@@ -1366,7 +1380,7 @@ export function generateMidiEventList(project, profile = getProfile(project)) {
         });
       }
     }
-    generateCcEvents({ ...project, notes: [note] }, profile).forEach((ccEvent) => {
+    ccEventsForPerformanceNote(project, profile, note).forEach((ccEvent) => {
       events.push({
         tick: ccEvent.tick,
         type: "cc",
