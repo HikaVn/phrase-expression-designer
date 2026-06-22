@@ -19,6 +19,8 @@
             Project読込
           </label>
           <button id="exportProjectButton" type="button">Project保存</button>
+          <button id="setupButton" type="button" title="鳴らすためのセットアップ手順（IAC/DAW/校正）">セットアップ</button>
+          <button id="demoButton" type="button" title="試聴用デモ譜を読み込む（解釈ON）">デモ譜</button>
           <label class="file-button">
             <input id="midiImportInput" type="file" accept=".mid,.midi,audio/midi">
             MIDI読込
@@ -81,6 +83,11 @@
               <button data-dynamic="fff" type="button">fff</button>
             </div>
           </div>
+          <div class="tool-group">
+            <label>テキスト入力</label>
+            <input id="phraseInput" type="text" autocomplete="off" spellcheck="false" placeholder="4 C D E | 2 G">
+            <button id="phraseEnterButton" type="button">入力</button>
+          </div>
         </aside>
 
         <section class="editor">
@@ -104,6 +111,20 @@
             <div>
               <span>Auto Save</span>
               <output id="autosaveOutput">待機中</output>
+            </div>
+            <div class="live-midi">
+              <span>Live MIDI</span>
+              <select id="midiOutputSelect" aria-label="MIDI出力先"></select>
+              <button id="playButton" type="button" title="再生（外部音源へ送出）">▶</button>
+              <button id="stopButton" type="button" title="停止">■</button>
+              <label class="loop-label"><input id="loopToggle" type="checkbox"> Loop</label>
+              <button id="testToneButton" type="button" title="テスト音(C4)を送出し配線を確認">テスト音</button>
+              <output id="midiStatusOutput">—</output>
+              <label class="loop-label" title="MCPサーバからの遠隔再生コマンドを受信">
+                <input id="bridgeToggle" type="checkbox"> Bridge
+              </label>
+              <input id="bridgePort" type="number" min="1" max="65535" value="4274" title="MCPブリッジのポート" style="width:5em">
+              <output id="bridgeStatus">未接続</output>
             </div>
           </section>
 
@@ -176,6 +197,11 @@
               Profile読込
             </label>
             <button id="wizardButton" type="button">Setup Wizard</button>
+            <div class="calib-row">
+              <select id="audioInputSelect" aria-label="オーディオ入力"></select>
+              <button id="calibrateButton" type="button" title="ループバック音声から intensity(CC1) を自動校正">Auto-Calibrate</button>
+            </div>
+            <p class="block-hint" id="calibStatus">ループバック音声(BlackHole等)→入力選択→Auto-Calibrate で intensity を実測校正</p>
           </section>
 
           <section class="inspector-block">
@@ -232,6 +258,24 @@
           </section>
 
           <section class="inspector-block">
+            <h2>Interpretation</h2>
+            <p class="block-hint">お抱え演奏家：フレーズ頂点の伸びと膨らみ・拍節アクセント・楽節頭の息継ぎ・終止の緩み・レガートの跳躍の届かせ・微小ゆらぎを自動付与。スコアを編集すると追随して再計算（記譜は不変）。</p>
+            <div class="property-row">
+              <input id="interpEnabled" type="checkbox">
+              <label for="interpEnabled">演奏解釈を有効化</label>
+            </div>
+            <div class="influence-row">
+              <label for="interpAmount">強さ</label>
+              <input id="interpAmount" type="range" min="0" max="100" step="1" value="100">
+              <output id="interpAmountOut">100%</output>
+            </div>
+            <details class="interp-details">
+              <summary>内訳ダイヤル</summary>
+              <div id="interpDials" class="interp-dials"></div>
+            </details>
+          </section>
+
+          <section class="inspector-block">
             <h2>Validation</h2>
             <ul id="validationList" class="validation-list"></ul>
           </section>
@@ -250,6 +294,30 @@
         placeholder="p / mf / ff / &lt; / &gt;">
     </div>
 
+    <dialog id="setupDialog" class="wizard-dialog">
+      <form method="dialog" class="wizard-form">
+        <header class="wizard-header">
+          <h2>セットアップ手順</h2>
+          <button value="cancel" type="submit">閉じる</button>
+        </header>
+        <div class="setup-body">
+          <div class="setup-head">
+            <label class="setup-daw">DAW
+              <select id="setupDawSelect">
+                <option value="logic">Logic Pro</option>
+                <option value="reaper">Reaper</option>
+                <option value="ableton">Ableton Live</option>
+                <option value="other">その他</option>
+              </select>
+            </label>
+            <button id="setupDiagnoseButton" type="button">接続診断</button>
+          </div>
+          <ul id="setupDiagnostics" class="diag-list"></ul>
+          <ol id="setupSteps" class="setup-steps"></ol>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="wizardDialog" class="wizard-dialog">
       <form method="dialog" class="wizard-form">
         <header class="wizard-header">
@@ -257,6 +325,12 @@
           <button id="wizardCloseButton" value="cancel" type="submit">閉じる</button>
         </header>
         <div class="wizard-grid">
+          <section class="wizard-section wide">
+            <h3>Engine</h3>
+            <p class="block-hint">エンジンを選ぶと、奏法・コントロールのプリセットと推奨設定を読み込みます。</p>
+            <div id="wizardEngineButtons" class="engine-button-row"></div>
+            <p id="wizardEngineSummary" class="wizard-summary"></p>
+          </section>
           <section class="wizard-section">
             <h3>Source</h3>
             <label>Base Profile<select id="wizardBaseSelect"></select></label>
@@ -286,12 +360,18 @@
             </div>
           </section>
           <section class="wizard-section wide">
-            <h3>Articulations</h3>
-            <textarea id="wizardArticulationsText"></textarea>
+            <div class="wizard-subhead">
+              <h3>Articulations</h3>
+              <button id="wizardAutoKsButton" type="button">Auto-assign KS</button>
+            </div>
+            <div id="wizardArtPresets" class="preset-list"></div>
+            <textarea id="wizardArticulationsText" aria-label="Articulations（詳細編集）"></textarea>
           </section>
           <section class="wizard-section wide">
             <h3>Controls</h3>
-            <textarea id="wizardControlsText"></textarea>
+            <div id="wizardCtrlPresets" class="preset-list"></div>
+            <textarea id="wizardControlsText" aria-label="Controls（詳細編集）"></textarea>
+            <p class="block-hint">列: parameter, label, type, cc/suggestedCC, on/off, calibration。calibration曲線(midiCC用): linear / dynamic_default / s_curve / soft / firm。プロファイル独自の校正は calibration 配列で dynamic_default を上書き可能。</p>
           </section>
           <section class="wizard-section wide">
             <h3>Setup Instructions</h3>

@@ -156,6 +156,342 @@ function learnControl(internalParameter, label, suggestedCC) {
   return { internalParameter, label, target: { type: "midiLearnRequired", suggestedCC }, enabled: true };
 }
 
+// Calibration curves map an internal value (0..1) to a CC output (0..1) before
+// the ×127. Real libraries respond non-linearly, so "intensity 0.6" only means
+// the same musical loudness once calibrated. `dynamic_default` is the per-
+// instrument slot a profile can override in its own `calibration` array; the
+// shared built-in default is identity (linear), so behaviour is unchanged until
+// a real shape is assigned.
+export const BUILT_IN_CALIBRATION_CURVES = [
+  { id: "linear", name: "Linear", points: [{ in: 0, out: 0 }, { in: 1, out: 1 }] },
+  { id: "dynamic_default", name: "Default (linear)", points: [{ in: 0, out: 0 }, { in: 1, out: 1 }] },
+  { id: "s_curve", name: "Dynamic S-curve", points: [{ in: 0, out: 0 }, { in: 0.25, out: 0.16 }, { in: 0.5, out: 0.5 }, { in: 0.75, out: 0.84 }, { in: 1, out: 1 }] },
+  { id: "soft", name: "Soft (low boost)", points: [{ in: 0, out: 0 }, { in: 0.5, out: 0.64 }, { in: 1, out: 1 }] },
+  { id: "firm", name: "Firm (low cut)", points: [{ in: 0, out: 0 }, { in: 0.5, out: 0.36 }, { in: 1, out: 1 }] }
+];
+
+// Resolve a curve id: a profile's own calibration overrides the shared built-in
+// (so an instrument can calibrate its `dynamic_default`); unknown ids => null.
+export function getCalibrationCurve(profile, id) {
+  if (!id) return null;
+  const fromProfile = Array.isArray(profile?.calibration) ? profile.calibration.find((curve) => curve.id === id) : null;
+  return fromProfile ?? BUILT_IN_CALIBRATION_CURVES.find((curve) => curve.id === id) ?? null;
+}
+
+// Piecewise-linear curve application; identity when there is no usable curve.
+export function applyCalibration(curve, value) {
+  const x = clamp(Number(value), 0, 1);
+  const points = Array.isArray(curve?.points) && curve.points.length ? [...curve.points].sort((a, b) => a.in - b.in) : null;
+  if (!points) return x;
+  if (x <= points[0].in) return clamp(points[0].out, 0, 1);
+  if (x >= points[points.length - 1].in) return clamp(points[points.length - 1].out, 0, 1);
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (x >= a.in && x <= b.in) {
+      const t = b.in === a.in ? 0 : (x - a.in) / (b.in - a.in);
+      return clamp(a.out + (b.out - a.out) * t, 0, 1);
+    }
+  }
+  return x;
+}
+
+// --- Auto-calibration (measure a library's response, fit a curve) ---------
+// A loopback workflow: send a CC sweep on a held note, capture the audio it
+// produces, measure loudness per step, then fit a calibration curve that
+// linearises the perceived response. The three pieces below are pure and
+// testable; the audio capture itself lives in the browser layer.
+
+// A held note plus a CC stepped 0..127 across `steps`, each dwelt `dwellMs`.
+// Returns timed playable messages and the analysis windows (which input value
+// each time span corresponds to).
+export function buildCalibrationProbe({ cc = 1, pitch = 60, velocity = 100, steps = 16, dwellMs = 300, leadMs = 250, channel = 0 } = {}) {
+  const ch = channel & 0x0f;
+  const messages = [{ timeMs: 0, bytes: [0x90 | ch, pitch, velocity] }];
+  const windows = [];
+  for (let i = 0; i < steps; i += 1) {
+    const value01 = steps === 1 ? 1 : i / (steps - 1);
+    const startMs = leadMs + i * dwellMs;
+    messages.push({ timeMs: startMs, bytes: [0xb0 | ch, cc, Math.round(value01 * 127)] });
+    windows.push({ value01, startMs, endMs: startMs + dwellMs });
+  }
+  const totalMs = leadMs + steps * dwellMs + 120;
+  messages.push({ timeMs: totalMs, bytes: [0x80 | ch, pitch, 0] });
+  return { totalMs, cc, messages, windows };
+}
+
+// Reduce captured RMS-over-time samples to one loudness level per probe window,
+// skipping the front of each window so transitions/attacks don't bias the mean.
+export function reduceCalibrationMeasurement(samples, windows, { skipFraction = 0.4 } = {}) {
+  return windows.map((window) => {
+    const span = window.endMs - window.startMs;
+    const from = window.startMs + span * clamp(skipFraction, 0, 0.9);
+    const inWindow = (samples ?? []).filter((s) => Number.isFinite(s?.rms) && s.timeMs >= from && s.timeMs <= window.endMs);
+    const meanRms = inWindow.length ? inWindow.reduce((sum, s) => sum + s.rms, 0) / inWindow.length : 0;
+    return { value01: window.value01, rms: meanRms, level: 20 * Math.log10(Math.max(meanRms, 1e-6)), count: inWindow.length };
+  });
+}
+
+// Fit a calibration curve that linearises the measured response: the curve maps
+// the requested internal value x to the CC fraction that yields a perceptually
+// even step. Robust to noise (monotonic envelope) and flat/degenerate input.
+export function fitCalibrationCurve(measured, { id = "measured", name = "Measured", outPoints = 9 } = {}) {
+  const linear = { id, name, points: [{ in: 0, out: 0 }, { in: 1, out: 1 }] };
+  const pts = (measured ?? [])
+    .filter((m) => Number.isFinite(m?.value01) && Number.isFinite(m?.level) && (m.count === undefined || m.count > 0))
+    .sort((a, b) => a.value01 - b.value01);
+  if (pts.length < 2) return linear;
+  // Monotonic non-decreasing level envelope (tames measurement noise).
+  let run = -Infinity;
+  const mono = pts.map((p) => {
+    run = Math.max(run, p.level);
+    return { value01: clamp(p.value01, 0, 1), level: run };
+  });
+  const lo = mono[0].level;
+  const hi = mono[mono.length - 1].level;
+  if (hi - lo < 1e-6) return linear; // flat response -> nothing to correct
+  const normalized = mono.map((p) => ({ value01: p.value01, n: clamp((p.level - lo) / (hi - lo), 0, 1) }));
+  const invert = (x) => {
+    if (x <= normalized[0].n) return normalized[0].value01;
+    if (x >= normalized[normalized.length - 1].n) return normalized[normalized.length - 1].value01;
+    for (let i = 0; i < normalized.length - 1; i += 1) {
+      const a = normalized[i];
+      const b = normalized[i + 1];
+      if (x >= a.n && x <= b.n) {
+        const t = b.n === a.n ? 0 : (x - a.n) / (b.n - a.n);
+        return clamp(a.value01 + (b.value01 - a.value01) * t, 0, 1);
+      }
+    }
+    return x;
+  };
+  const count = Math.max(2, Math.round(outPoints));
+  const points = [];
+  for (let i = 0; i < count; i += 1) {
+    const x = i / (count - 1);
+    points.push({ in: x, out: invert(x) });
+  }
+  return { id, name, points };
+}
+
+// Engine-specific Setup Wizards. Each wizard carries a richer preset *menu*
+// than the shipped built-in profiles: the user picks which articulations and
+// controls their patch actually has, and the wizard builds a validated profile
+// with engine-correct note naming, ranges, timing, and (for keyswitch engines)
+// automatically numbered keyswitch slots.
+function artPreset(id, name, type, performance = {}, trigger = { type: "keyswitch", lookAheadMs: 100 }) {
+  return {
+    id,
+    name,
+    type,
+    trigger,
+    performance: { globalOffsetMs: 0, overlapPercent: 0, overlapMaxMs: 0, ...performance }
+  };
+}
+
+const TRIGGER_DEFAULT = { type: "default" };
+function triggerManual() {
+  return { type: "manual", reason: "Confirm available articulation control in the source instrument." };
+}
+
+export const ENGINE_WIZARDS = [
+  {
+    id: "opus",
+    label: "EastWest Opus",
+    engine: "EastWest Opus",
+    defaultLibrary: "Hollywood Strings",
+    defaultPatch: "1st Violins KS Master",
+    summary:
+      "Opus/Play系。奏法はARTICULATIONSタブでKey Switchに割り当て、CCはAUTOMATIONタブで対応させます。内部パッチは別名保存してください。",
+    noteNaming: "C3=60",
+    playableRange: { low: 55, high: 103 },
+    keyswitchRange: { low: 12, high: 36 },
+    keyswitchStartNote: "C0",
+    timing: { trackOffsetMs: 0, ccLookAheadMs: 80, programChangeLookAheadMs: 150 },
+    articulationPresets: [
+      artPreset("sustain", "Sustain", "long", { globalOffsetMs: -80 }),
+      artPreset("legato", "Legato", "legato", { globalOffsetMs: -80, overlapPercent: 5, overlapMaxMs: 80 }),
+      artPreset("portato", "Portato", "long", { globalOffsetMs: -40 }),
+      artPreset("spiccato", "Spiccato", "short", { globalOffsetMs: -20 }),
+      artPreset("staccato", "Staccato", "short", { globalOffsetMs: -20 }),
+      artPreset("pizzicato", "Pizzicato", "short", { globalOffsetMs: -10 }),
+      artPreset("tremolo", "Tremolo", "long", { globalOffsetMs: -60 }),
+      artPreset("trill_half", "Trill (half)", "long", { globalOffsetMs: -60 }),
+      artPreset("trill_whole", "Trill (whole)", "long", { globalOffsetMs: -60 }),
+      artPreset("marcato", "Marcato", "marcato", { globalOffsetMs: -40 }),
+      artPreset("accent", "Accent", "accent", { globalOffsetMs: -30 }),
+      artPreset("harmonics", "Harmonics", "long", { globalOffsetMs: -60 })
+    ],
+    controlPresets: [
+      ccControl("intensity", "Modulation wheel", 1),
+      ccControl("legatoTime", "Legato Time", 5),
+      ccControl("midiVolume", "MIDI Volume", 7),
+      ccControl("pan", "MIDI Pan", 10),
+      ccControl("volume", "Expression", 11),
+      ccControl("conSordino", "Con Sordino", 15),
+      ccControl("vibratoDepth", "Vibrato", 21),
+      ccControl("fingerPosition", "Finger Position", 70)
+    ],
+    setupInstructions: [
+      "OpusでARTICULATIONSタブを開く",
+      "未使用奏法のNoneを左クリックし、Key Switchを選択する",
+      "本Profileのキースイッチ割当（自動採番）と照合する",
+      "Opus側パッチを別名保存する",
+      "AUTOMATIONタブのCC割当を本Profileと照合する"
+    ]
+  },
+  {
+    id: "kontakt",
+    label: "Kontakt / 8Dio",
+    engine: "Kontakt",
+    defaultLibrary: "8Dio Century Strings",
+    defaultPatch: "8Dio Century - Violins 1",
+    summary:
+      "Kontakt系（8Dio Century等）。奏法は画面下部のキースイッチ、ノブ類はMIDI Learnで対応させます。Kontakt内部ファイルは編集しません。",
+    noteNaming: "Kontakt",
+    playableRange: { low: 55, high: 103 },
+    keyswitchRange: { low: 12, high: 33 },
+    keyswitchStartNote: "C-1",
+    timing: { trackOffsetMs: 0, ccLookAheadMs: 80, programChangeLookAheadMs: 150 },
+    articulationPresets: [
+      artPreset("sus_vibrato", "SUS VIBRATO", "long", { globalOffsetMs: -80 }),
+      artPreset("legato", "LEGATO", "legato", { globalOffsetMs: -80, overlapPercent: 5, overlapMaxMs: 80 }),
+      artPreset("sus_molto_vib", "SUS MOLTO VIB", "long", { globalOffsetMs: -80 }),
+      artPreset("sus_non_vib", "SUS NON VIB", "long", { globalOffsetMs: -80 }),
+      artPreset("marcato", "MARCATO", "marcato", { globalOffsetMs: -40 }),
+      artPreset("staccato", "STACCATO", "short", { globalOffsetMs: -20 }),
+      artPreset("spiccato_feather", "SPICCATO FEATHER", "short", { globalOffsetMs: -20 }),
+      artPreset("spiccato_tapped", "SPICCATO TAPPED", "short", { globalOffsetMs: -20 }),
+      artPreset("loure_short", "LOURE SHORT", "short", { globalOffsetMs: -20 }),
+      artPreset("tremolo", "TREMOLO", "long", { globalOffsetMs: -60 }),
+      artPreset("trill", "TRILL", "long", { globalOffsetMs: -60 })
+    ],
+    controlPresets: [
+      learnControl("intensity", "DYNAMICS", 1),
+      learnControl("volume", "EXPRESSION", 11),
+      learnControl("vibratoDepth", "VIBRATO", 21),
+      learnControl("legatoSpeed", "SPEED", 20),
+      learnControl("releaseTail", "RELEASE TAILS", 23),
+      learnControl("legatoVolume", "LEGATO VOL.", 24)
+    ],
+    setupInstructions: [
+      "Kontakt画面の奏法表とKeyswitchを確認する",
+      "本Profileのキースイッチ割当（自動採番）と照合する",
+      "ノブ類はMIDI Learnまたは手動対象として分類する",
+      "Kontakt内部ファイルは直接編集しない"
+    ]
+  },
+  {
+    id: "logic",
+    label: "Logic Preset",
+    engine: "Logic Instrument",
+    defaultLibrary: "Logic Preset Strings",
+    defaultPatch: "Studio Strings",
+    summary:
+      "Logic内蔵音源。Articulationはデフォルト/Smart Controlsで切替。キースイッチは持ちません。CC1/CC11の反応を手動確認します。",
+    noteNaming: "Logic",
+    playableRange: { low: 36, high: 103 },
+    keyswitchRange: { low: 0, high: 0 },
+    keyswitchStartNote: null,
+    timing: { trackOffsetMs: 0, ccLookAheadMs: 80, programChangeLookAheadMs: 150 },
+    articulationPresets: [
+      artPreset("sustain", "Sustain", "long", { globalOffsetMs: -20 }, TRIGGER_DEFAULT),
+      artPreset("legato", "Legato", "legato", { globalOffsetMs: -30, overlapPercent: 5, overlapMaxMs: 80 }, TRIGGER_DEFAULT),
+      artPreset("staccato", "Staccato", "short", { globalOffsetMs: 0 }, triggerManual()),
+      artPreset("accent", "Accent", "accent", { globalOffsetMs: 0 }, triggerManual()),
+      artPreset("marcato", "Marcato", "marcato", { globalOffsetMs: 0 }, triggerManual()),
+      artPreset("pizzicato", "Pizzicato", "short", { globalOffsetMs: 0 }, triggerManual())
+    ],
+    controlPresets: [
+      ccControl("intensity", "Dynamics", 1),
+      ccControl("volume", "Expression", 11)
+    ],
+    setupInstructions: [
+      "Logicプリセット弦楽器を読み込む",
+      "使用可能なArticulationとSmart Controlsを手動確認する",
+      "MIDI CC1/11の反応を確認する"
+    ]
+  }
+];
+
+export function engineWizardById(id) {
+  return ENGINE_WIZARDS.find((wizard) => wizard.id === id) ?? null;
+}
+
+// Number the keyswitch-triggered articulations chromatically from a start note,
+// leaving default/manual articulations untouched. Returns new objects.
+export function autoAssignKeyswitches(articulations, startNoteName = "C0", noteNaming = "C3=60") {
+  const startMidi = startNoteName === null ? null : noteNameToMidi(startNoteName, noteNaming);
+  let slot = 0;
+  return articulations.map((art) => {
+    if (art.trigger?.type !== "keyswitch" || startMidi === null) return structuredClone(art);
+    const noteName = pitchName(startMidi + slot, noteNaming);
+    slot += 1;
+    return { ...structuredClone(art), trigger: { ...art.trigger, noteName } };
+  });
+}
+
+function engineProfileId(engine, library, patch) {
+  return [engine, library, patch]
+    .map((part) => String(part || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""))
+    .filter(Boolean)
+    .join("_") || "custom_profile";
+}
+
+// Build a complete, validated-shape instrument profile from an engine wizard
+// and the user's selection of articulations/controls. Pure and testable.
+export function buildEngineProfile(wizardId, selection = {}) {
+  const wizard = engineWizardById(wizardId);
+  if (!wizard) throw new Error(`Unknown engine wizard: ${wizardId}`);
+  const library = String(selection.library ?? wizard.defaultLibrary ?? "Custom Library").trim() || "Custom Library";
+  const patch = String(selection.patch ?? wizard.defaultPatch ?? "Custom Patch").trim() || "Custom Patch";
+  const artIds = selection.articulationIds ?? wizard.articulationPresets.map((art) => art.id);
+  const ctrlIds = selection.controlIds ?? wizard.controlPresets.map((control) => control.internalParameter);
+  const articulations = autoAssignKeyswitches(
+    wizard.articulationPresets.filter((art) => artIds.includes(art.id)).map((art) => structuredClone(art)),
+    wizard.keyswitchStartNote,
+    wizard.noteNaming
+  );
+  const controls = wizard.controlPresets
+    .filter((control) => ctrlIds.includes(control.internalParameter))
+    .map((control) => structuredClone(control));
+  return {
+    schemaVersion: "0.1.0",
+    id: engineProfileId(wizard.engine, library, patch),
+    engine: wizard.engine,
+    library,
+    patch,
+    noteNaming: wizard.noteNaming,
+    playableRange: { ...wizard.playableRange },
+    keyswitchRange: { ...wizard.keyswitchRange },
+    articulations,
+    controls,
+    timing: { ...wizard.timing },
+    calibration: [],
+    setupInstructions: [...wizard.setupInstructions],
+    validationRules: [],
+    testEvents: []
+  };
+}
+
+// Interpretation = the "retained performer". A steerable layer that derives
+// the micro-decisions a real player makes (phrase shaping, agogics, breath,
+// human imperfection) from the score itself, written as timing/duration
+// nudges on top of the score — never altering the notated values. Disabled by
+// default so the engine stays a faithful transcoder until you ask for a player.
+export const DEFAULT_INTERPRETATION = {
+  enabled: false,
+  amount: 1,        // overall strength 0..1 (the main dial)
+  breathMs: 45,     // luft/breath before a new phrase
+  apexTenutoMs: 60, // lengthen the phrase apex (peak) note
+  finalRelaxMs: 30, // relax (delay) the phrase-final note
+  humanizeMs: 8,    // deterministic +/- onset jitter ("alive", reproducible)
+  swell: 12,        // velocity arch depth: lift toward the apex, ease the edges
+  accent: 8,        // metrical accent: strong beats louder, offbeats softer
+  humanizeVel: 4,   // deterministic +/- velocity jitter
+  legatoReachMs: 18,// legato leaps are "reached for": delay grows with interval
+  seed: 1
+};
+
 export function createInitialProject() {
   return {
     schemaVersion: "0.1.0",
@@ -188,7 +524,8 @@ export function createInitialProject() {
       phraseFlow: { parameter: "phraseFlow", points: [{ tick: 0, value: 0.2 }, { tick: 1920, value: 0.85 }, { tick: 3840, value: 0.25 }] }
     },
     profileId: "opus_hollywood_strings",
-    trackTimingOffsetMs: 0
+    trackTimingOffsetMs: 0,
+    interpretation: { ...DEFAULT_INTERPRETATION }
   };
 }
 
@@ -794,22 +1131,139 @@ export function nextNote(project, note) {
   return [...project.notes].sort((a, b) => a.scoreTick - b.scoreTick).find((candidate) => candidate.scoreTick > note.scoreTick) ?? null;
 }
 
+// Small deterministic PRNG so "human" jitter is alive but reproducible
+// (and testable). Same seed + note order => same performance.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Split the notes into phrases: a new phrase starts wherever a gap (a rest, or
+// any silence) separates a note from the previous note's end.
+function segmentPhrases(notes) {
+  const sorted = [...notes].sort((a, b) => a.scoreTick - b.scoreTick || a.pitch - b.pitch);
+  const phrases = [];
+  let current = null;
+  sorted.forEach((note) => {
+    if (current && note.scoreTick <= current.end + 1) {
+      current.notes.push(note);
+      current.end = Math.max(current.end, note.scoreTick + note.durationTicks);
+    } else {
+      current = { notes: [note], end: note.scoreTick + note.durationTicks };
+      phrases.push(current);
+    }
+  });
+  return phrases.map((phrase) => phrase.notes);
+}
+
+// The performer's micro-decisions, derived from the score. Returns a map of
+// noteId -> { onsetMs, durationMs, velocityDelta } nudges. Pure; does not
+// mutate the project.
+export function computeInterpretation(project, settings = project.interpretation, profile = getProfile(project)) {
+  const result = new Map();
+  if (!settings || !settings.enabled) return result;
+  const amount = clamp(Number(settings.amount ?? 1), 0, 1);
+  if (amount === 0) return result;
+  const breathMs = (settings.breathMs ?? 0) * amount;
+  const apexTenutoMs = (settings.apexTenutoMs ?? 0) * amount;
+  const finalRelaxMs = (settings.finalRelaxMs ?? 0) * amount;
+  const humanizeMs = (settings.humanizeMs ?? 0) * amount;
+  const legatoReachMs = (settings.legatoReachMs ?? 0) * amount;
+  const swell = settings.swell ?? 0;
+  const accent = settings.accent ?? 0;
+  const humanizeVel = settings.humanizeVel ?? 0;
+  const ticksPerBar = project.ppq * 4;
+  const beatTol = project.ppq / 16;
+  const rng = mulberry32(settings.seed ?? 1);
+  segmentPhrases(project.notes).forEach((phrase, phraseIndex) => {
+    // Apex = the phrase's peak: highest pitch, breaking ties toward the louder
+    // (then earlier) note — the note a player naturally leans on.
+    let apexIndex = 0;
+    phrase.forEach((note, index) => {
+      const apex = phrase[apexIndex];
+      if (note.pitch > apex.pitch || (note.pitch === apex.pitch && (note.velocity ?? 0) > (apex.velocity ?? 0))) apexIndex = index;
+    });
+    phrase.forEach((note, index) => {
+      let onsetMs = 0;
+      let durationMs = 0;
+      if (index === 0 && phraseIndex > 0) onsetMs += breathMs;        // breath into a new phrase
+      if (index === phrase.length - 1) {                              // relax + linger at the close
+        onsetMs += finalRelaxMs;
+        durationMs += apexTenutoMs * 0.5;
+      }
+      if (index === apexIndex) durationMs += apexTenutoMs;            // agogic lean on the peak
+      // Legato leaps take longer to traverse: a connected (legato) note is
+      // "reached for" in proportion to the interval from the previous note.
+      if (index > 0 && getArticulation(profile, note.articulation)?.type === "legato") {
+        const interval = Math.abs(note.pitch - phrase[index - 1].pitch);
+        onsetMs += legatoReachMs * Math.min(1, interval / 12);
+      }
+      onsetMs += (rng() * 2 - 1) * humanizeMs;                        // human onset imperfection
+
+      // Velocity: a phrase arch (peak at the apex, eased at the edges) plus a
+      // metrical accent (strong beats louder, offbeats softer) plus jitter.
+      const arch = swell * (archShape(index, apexIndex, phrase.length) - 0.5);
+      const metric = metricalAccent(note.scoreTick, ticksPerBar, project.ppq, beatTol, accent);
+      const velJitter = (rng() * 2 - 1) * humanizeVel;
+      const velocityDelta = (arch + metric + velJitter) * amount;
+
+      result.set(note.id, { onsetMs, durationMs, velocityDelta });
+    });
+  });
+  return result;
+}
+
+// Phrase-arch weight in [0,1]: 1 at the apex, ramping from the phrase edges.
+function archShape(index, apexIndex, length) {
+  if (length <= 1 || index === apexIndex) return 1;
+  if (index < apexIndex) return apexIndex === 0 ? 1 : index / apexIndex;
+  const tail = length - 1 - apexIndex;
+  return tail === 0 ? 1 : (length - 1 - index) / tail;
+}
+
+// Metrical accent in velocity units: downbeat strongest, beat 3 next, other
+// beats slightly accented, offbeats slightly softened.
+function metricalAccent(scoreTick, ticksPerBar, ppq, beatTol, accent) {
+  const inBar = ((scoreTick % ticksPerBar) + ticksPerBar) % ticksPerBar;
+  const beatIndex = Math.round(inBar / ppq);
+  const onBeat = Math.abs(inBar - beatIndex * ppq) <= beatTol;
+  if (!onBeat) return -accent * 0.25;
+  if (beatIndex % 4 === 0) return accent;
+  if (beatIndex % 4 === 2) return accent * 0.5;
+  return accent * 0.25;
+}
+
 export function computePerformanceNotes(project, profile = getProfile(project)) {
+  const interpretation = computeInterpretation(project, project.interpretation, profile);
   return project.notes.map((note) => {
     const art = getArticulation(profile, note.articulation);
     const performance = art?.performance ?? {};
+    // Frozen (user-pinned) notes opt out of interpretation.
+    // Freezing pins a note's timing only — its onset/duration opt out of
+    // interpretation, but the velocity arch/accent still applies.
+    const rawInterp = interpretation.get(note.id) || { onsetMs: 0, durationMs: 0, velocityDelta: 0 };
+    const interp = note.frozenPerformanceTick == null
+      ? rawInterp
+      : { onsetMs: 0, durationMs: 0, velocityDelta: rawInterp.velocityDelta };
     const offsetMs =
       (profile.timing?.trackOffsetMs ?? 0) +
       (project.trackTimingOffsetMs ?? 0) +
       (performance.globalOffsetMs ?? 0) +
       (note.phraseOffsetMs ?? 0) +
       (note.localStartOffsetMs ?? 0) +
-      (note.humanizeMs ?? 0);
+      (note.humanizeMs ?? 0) +
+      interp.onsetMs;
     const startTick = note.frozenPerformanceTick ?? note.scoreTick + msToTick(offsetMs, project.tempoMap, project.ppq, note.scoreTick);
     const overlapMs = art?.type === "legato" ? Math.min((tickToMs(note.durationTicks, [{ tick: 0, bpm: bpmAtTick(note.scoreTick, project.tempoMap) }], project.ppq) * (performance.overlapPercent ?? 0)) / 100, performance.overlapMaxMs ?? 0) : 0;
-    const endOffsetTick = msToTick((note.localEndOffsetMs ?? 0) + overlapMs + (note.localDurationOffsetMs ?? 0), project.tempoMap, project.ppq, note.scoreTick + note.durationTicks);
+    const endOffsetTick = msToTick((note.localEndOffsetMs ?? 0) + overlapMs + (note.localDurationOffsetMs ?? 0) + interp.durationMs, project.tempoMap, project.ppq, note.scoreTick + note.durationTicks);
     const durationTicks = Math.max(1, note.durationTicks + endOffsetTick);
-    return { ...note, performanceStartTick: Math.max(0, startTick), performanceDurationTicks: durationTicks, articulationName: art?.name ?? note.articulation };
+    const performanceVelocity = clamp(Math.round((note.velocity ?? 72) + interp.velocityDelta), 1, 127);
+    return { ...note, performanceStartTick: Math.max(0, startTick), performanceDurationTicks: durationTicks, performanceVelocity, articulationName: art?.name ?? note.articulation };
   });
 }
 
@@ -857,21 +1311,33 @@ export function deleteCurvePoint(project, parameter, pointIndex) {
   return true;
 }
 
-export function generateCcEvents(project, profile = getProfile(project)) {
-  const events = [];
-  const performanceNotes = computePerformanceNotes(project, profile);
-  performanceNotes.forEach((note) => {
-    profile.controls.filter((control) => control.enabled && control.target?.type === "midiCC").forEach((control) => {
-      const lookAheadTick = Math.max(0, note.performanceStartTick - msToTickPrecise(profile.timing?.ccLookAheadMs ?? 80, project.tempoMap, project.ppq, note.performanceStartTick));
-      events.push({
+// CC events for one already-computed performance note. Uses the note's
+// authoritative performanceStartTick, so the lookahead lines up with the real
+// note-on (callers must not re-derive timing from a single-note sub-project,
+// which would mis-handle phrase-context interpretation).
+function ccEventsForPerformanceNote(project, profile, note) {
+  const lookAheadTick = Math.max(0, note.performanceStartTick - msToTickPrecise(profile.timing?.ccLookAheadMs ?? 80, project.tempoMap, project.ppq, note.performanceStartTick));
+  return profile.controls
+    .filter((control) => control.enabled && control.target?.type === "midiCC")
+    .map((control) => {
+      const raw = effectiveExpression(project, note, control.internalParameter);
+      const curve = getCalibrationCurve(profile, control.calibrationCurveId);
+      const calibrated = curve ? applyCalibration(curve, raw) : raw;
+      return {
         tick: lookAheadTick,
         cc: control.target.cc,
-        value: clamp(Math.round(effectiveExpression(project, note, control.internalParameter) * 127), 0, 127),
+        value: clamp(Math.round(calibrated * 127), 0, 127),
         parameter: control.internalParameter,
         label: control.label,
         noteId: note.id
-      });
+      };
     });
+}
+
+export function generateCcEvents(project, profile = getProfile(project)) {
+  const events = [];
+  computePerformanceNotes(project, profile).forEach((note) => {
+    events.push(...ccEventsForPerformanceNote(project, profile, note));
   });
   return events.sort((a, b) => a.tick - b.tick || a.cc - b.cc);
 }
@@ -914,7 +1380,7 @@ export function generateMidiEventList(project, profile = getProfile(project)) {
         });
       }
     }
-    generateCcEvents({ ...project, notes: [note] }, profile).forEach((ccEvent) => {
+    ccEventsForPerformanceNote(project, profile, note).forEach((ccEvent) => {
       events.push({
         tick: ccEvent.tick,
         type: "cc",
@@ -924,14 +1390,15 @@ export function generateMidiEventList(project, profile = getProfile(project)) {
         bytes: [0xb0, ccEvent.cc, ccEvent.value]
       });
     });
+    const velocity = note.performanceVelocity ?? note.velocity;
     events.push({
       tick: note.performanceStartTick,
       type: "noteOn",
       source: note.articulationName,
-      detail: `${pitchName(note.pitch, profile.noteNaming)} velocity ${note.velocity}`,
+      detail: `${pitchName(note.pitch, profile.noteNaming)} velocity ${velocity}`,
       priority: 4,
       noteId: note.id,
-      bytes: [0x90, note.pitch, note.velocity]
+      bytes: [0x90, note.pitch, velocity]
     });
     events.push({
       tick: note.performanceStartTick + note.performanceDurationTicks,
@@ -944,6 +1411,22 @@ export function generateMidiEventList(project, profile = getProfile(project)) {
     });
   });
   return events.sort((a, b) => a.tick - b.tick || a.priority - b.priority);
+}
+
+// Turn the project's MIDI event list into time-stamped playable messages for
+// live Web MIDI output: drop file-only meta (tempo, 0xF0+) and convert each
+// event's tick to milliseconds from the start. Order is preserved from the
+// event list (already sorted by tick then priority), so note-on/keyswitch/CC
+// ordering at the same instant is kept.
+export function generatePlaybackMessages(project, profile = getProfile(project)) {
+  const tempoMap = project.tempoMap?.length ? project.tempoMap : [{ tick: 0, bpm: 120 }];
+  return generateMidiEventList(project, profile)
+    .filter((event) => Array.isArray(event.bytes) && event.bytes[0] < 0xf0)
+    .map((event) => ({
+      timeMs: tickToMs(event.tick, tempoMap, project.ppq),
+      type: event.type,
+      bytes: event.bytes
+    }));
 }
 
 export function sampleCurve(project, parameter, tick) {
@@ -993,6 +1476,9 @@ export function validateProfile(profile) {
       const existing = ccByParam.get(control.internalParameter);
       if (existing !== undefined && existing !== target.cc) messages.push(error(`Internal parameter has competing CC assignments: ${control.internalParameter}`));
       ccByParam.set(control.internalParameter, target.cc);
+      if (control.calibrationCurveId && !getCalibrationCurve(profile, control.calibrationCurveId)) {
+        messages.push(warn(`Unknown calibration curve: ${control.label} -> ${control.calibrationCurveId}`));
+      }
     }
     if (target.type === "midiLearnRequired") messages.push(warn(`MIDI Learn required: ${control.label} suggested CC${target.suggestedCC}`));
     if (target.type === "manual" || target.type === "unsupported" || target.type === "hostAutomation") messages.push(warn(`Not directly exported to MIDI: ${control.label} (${target.type})`));
@@ -1054,6 +1540,194 @@ export function createTestProject(profileId) {
   project.slurs = [{ id: cryptoRandomId("slur"), startNoteId: project.notes[0].id, endNoteId: project.notes[2].id }];
   project.crescendos = [{ id: cryptoRandomId("crescendo"), startNoteId: project.notes[0].id, endNoteId: project.notes[3].id, direction: "crescendo", curveType: "S-Curve", startIntensity: 0.35, endIntensity: 0.85, timbreFollowsDynamics: true, expressionFollowsDynamics: true, vibratoAmount: 0.35 }];
   return project;
+}
+
+// A lyrical two-phrase line built to show off the interpretation engine for
+// ear-checking: a legato ascent leaping to an apex, a phrase break (rest),
+// then a falling answer — with an intensity arch so CC moves too. Ships with
+// interpretation on so A/B is one toggle away.
+export function createDemoPhraseProject(profileId = "opus_hollywood_strings") {
+  const project = createInitialProject();
+  project.profileId = profileId;
+  project.title = "Demo Phrase";
+  project.notes = [
+    createNote({ pitch: 64, scoreTick: 0, durationTicks: 960, articulation: "legato", velocity: 64 }),
+    createNote({ pitch: 67, scoreTick: 960, durationTicks: 960, articulation: "legato", velocity: 70 }),
+    createNote({ pitch: 72, scoreTick: 1920, durationTicks: 960, articulation: "legato", velocity: 82 }), // leap to apex
+    createNote({ pitch: 71, scoreTick: 2880, durationTicks: 480, articulation: "legato", velocity: 74 }),
+    // breath: rest 3360..3840
+    createNote({ pitch: 69, scoreTick: 3840, durationTicks: 960, articulation: "legato", velocity: 70 }),
+    createNote({ pitch: 67, scoreTick: 4800, durationTicks: 960, articulation: "legato", velocity: 66 }),
+    createNote({ pitch: 64, scoreTick: 5760, durationTicks: 1920, articulation: "legato", velocity: 60 })
+  ];
+  project.rests = [{ id: cryptoRandomId("rest"), scoreTick: 3360, durationTicks: 480 }];
+  project.slurs = [
+    { id: cryptoRandomId("slur"), startNoteId: project.notes[0].id, endNoteId: project.notes[3].id },
+    { id: cryptoRandomId("slur"), startNoteId: project.notes[4].id, endNoteId: project.notes[6].id }
+  ];
+  project.crescendos = [];
+  project.dynamics = [];
+  project.expressionCurves = {
+    intensity: { parameter: "intensity", points: [{ tick: 0, value: 0.32 }, { tick: 1920, value: 0.82 }, { tick: 3360, value: 0.5 }, { tick: 5760, value: 0.6 }, { tick: 7680, value: 0.25 }] },
+    volume: { parameter: "volume", points: [{ tick: 0, value: 0.45 }, { tick: 1920, value: 0.72 }, { tick: 7680, value: 0.4 }] }
+  };
+  project.interpretation = { ...DEFAULT_INTERPRETATION, enabled: true };
+  project.cursorTick = 7680;
+  return project;
+}
+
+// Sibelius-style text note entry (the primitive for fast / remote note entry):
+//   "4 C D E | 2 G   8 r A"  ->  sticky duration, A–G nearest the previous
+// pitch (or explicit scientific octave C4=60), accidentals # b, dots, r = rest,
+// | = barline (ignored for timing). Pure; returns notes/rests and the end tick.
+const PHRASE_LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+export function parsePhrase(text, { ppq = PPQ_DEFAULT, startTick = 0, velocity = 80, articulation = "sustain" } = {}) {
+  const tokens = String(text ?? "").trim().split(/\s+/).filter(Boolean);
+  const notes = [];
+  const rests = [];
+  let tick = Math.max(0, Math.round(startTick));
+  let durTicks = ppq; // quarter note default
+  let lastPitch = 67;
+  tokens.forEach((token) => {
+    if (token === "|") return;
+    const durMatch = /^(\d+)(\.*)$/.exec(token);
+    if (durMatch) {
+      const base = Number(durMatch[1]);
+      if (![1, 2, 4, 8, 16, 32, 64].includes(base)) throw new Error(`Bad duration: ${token}`);
+      let value = (ppq * 4) / base;
+      let increment = value;
+      for (let i = 0; i < durMatch[2].length; i += 1) {
+        increment /= 2;
+        value += increment;
+      }
+      durTicks = Math.max(1, Math.round(value));
+      return;
+    }
+    if (/^r$/i.test(token)) {
+      rests.push({ id: cryptoRandomId("rest"), scoreTick: tick, durationTicks: durTicks });
+      tick += durTicks;
+      return;
+    }
+    const noteMatch = /^([A-Ga-g])([#b]?)(-?\d+)?$/.exec(token);
+    if (!noteMatch) throw new Error(`Bad token: ${token}`);
+    const letter = noteMatch[1].toUpperCase();
+    const accidental = noteMatch[2] === "#" ? 1 : noteMatch[2] === "b" ? -1 : 0;
+    let pitch;
+    if (noteMatch[3] !== undefined) {
+      pitch = (Number(noteMatch[3]) + 1) * 12 + PHRASE_LETTER_PC[letter] + accidental; // scientific C4=60
+    } else {
+      pitch = nearestPitchForLetter(letter, lastPitch) + accidental;
+    }
+    pitch = clamp(pitch, 0, 127);
+    notes.push(createNote({ pitch, scoreTick: tick, durationTicks: durTicks, articulation, velocity }));
+    lastPitch = pitch;
+    tick += durTicks;
+  });
+  return { notes, rests, endTick: tick };
+}
+
+export function projectFromPhrase(text, { profileId, ...options } = {}) {
+  const project = createInitialProject();
+  if (profileId) project.profileId = profileId;
+  const { notes, rests } = parsePhrase(text, { ppq: project.ppq, ...options });
+  project.notes = notes;
+  project.rests = rests;
+  project.slurs = [];
+  project.crescendos = [];
+  project.dynamics = [];
+  project.cursorTick = notes.reduce((max, note) => Math.max(max, note.scoreTick + note.durationTicks), 0);
+  return project;
+}
+
+// Curated setup steps to get sound out of this (silent) app via an external
+// instrument: the commands that can be run as-is, plus official references.
+// Reduces the manual "physical setup" to copy-paste + a few GUI clicks. The
+// agent-assisted refresh (fetch official docs and diff) is a separate, opt-in
+// layer documented in mcp/README.md.
+const SETUP_DAW_NOTE = {
+  logic: "Logicで弦音源トラックを作り、入力をIACに、録音待機/モニタONにする（IACのMIDIを受ける状態に）。",
+  reaper: "Reaperで弦音源トラックを作り、入力をIAC(All MIDI)に、Record monitorをONにする。",
+  ableton: "Liveで弦音源トラックを作り、MIDI From をIACに、Monitor=In/Auto にする。",
+  other: "DAWで弦音源トラックを作り、MIDI入力をIACに割り当て、入力をモニタできる状態にする。"
+};
+
+export function getSetupGuide({ os = "mac", daw = "logic", goal = "all" } = {}) {
+  const dawNote = SETUP_DAW_NOTE[daw] ?? SETUP_DAW_NOTE.other;
+  const steps = [
+    {
+      id: "iac",
+      title: "仮想MIDIバス(IAC)を有効化",
+      detail: "「Audio MIDI設定」→ ウィンドウ → MIDIスタジオ → IACドライバをダブルクリック →「装置はオンライン」にチェック。",
+      url: "https://support.apple.com/guide/audio-midi-setup/welcome/mac"
+    },
+    {
+      id: "instrument",
+      title: "DAWで音源トラックを用意",
+      detail: dawNote,
+      url: daw === "logic" ? "https://support.apple.com/logic-pro" : null
+    },
+    {
+      id: "serve",
+      title: "アプリを起動",
+      detail: "リポジトリ直下で起動し、Chrome/Edge で開く（localhost必須・Safari/file:不可）。",
+      command: "npm start",
+      url: "http://127.0.0.1:4273"
+    },
+    {
+      id: "connect",
+      title: "出力先IACを選び配線確認",
+      detail: "Live MIDIの出力先で IAC Driver Bus 1 を選び、「テスト音」を押す → DAWで1音鳴れば配線OK。",
+      url: null
+    },
+    {
+      id: "mcp",
+      title: "（任意）遠隔操作のMCPブリッジ",
+      detail: "MCPサーバを起動し、アプリで Bridge にチェック。MCPクライアントには stdioサーバとして登録する。",
+      command: "node mcp/server.js",
+      url: null
+    }
+  ];
+  if (goal !== "playback") {
+    steps.push(
+      {
+        id: "blackhole",
+        title: "（校正用）ループバック音声デバイスを導入",
+        detail: "DAWの出力をBlackHoleへ（同時に聴くなら BlackHole＋スピーカーの Multi-Output Device を作って出力先に）。",
+        command: "brew install blackhole-2ch",
+        url: "https://github.com/ExistentialAudio/BlackHole",
+        automatable: true
+      },
+      {
+        id: "calibrate",
+        title: "（校正用）Auto-Calibrate を実行",
+        detail: "Instrument Profile の入力で BlackHole を選び、Auto-Calibrate。intensityの応答を実測して曲線化する。",
+        url: null
+      }
+    );
+  }
+  return { os, daw, goal, steps };
+}
+
+// Auto-diagnose the live setup so the user doesn't debug by hand: given what
+// the browser can see (Web MIDI availability, the MIDI output names, audio
+// inputs, optional bridge reachability), report pass/fail checks with the fix.
+// Pure; the browser collects the environment and renders the result.
+export function runSetupDiagnostics({ webMidiAvailable = false, midiOutputNames = [], audioInputCount = 0, bridgeReachable = null } = {}) {
+  const names = Array.isArray(midiOutputNames) ? midiOutputNames : [];
+  const hasOutput = names.length > 0;
+  const hasBus = names.some((n) => /IAC|virtual|Phrase Expression/i.test(String(n)));
+  const checks = [
+    { id: "web-midi", label: "Web MIDI 利用可能", ok: Boolean(webMidiAvailable), fix: "Chrome/Edge で localhost から開く（Safari・file: は不可）" },
+    { id: "midi-output", label: "MIDI出力先あり", ok: hasOutput, fix: "IACドライバを有効化（セットアップ手順参照）" },
+    { id: "midi-bus", label: "IAC/仮想バスを検出", ok: hasOutput && hasBus, fix: "出力先に IAC Driver（または仮想MIDIポート）を用意する" },
+    { id: "audio-input", label: "オーディオ入力あり（校正用）", ok: audioInputCount > 0, optional: true, fix: "校正には BlackHole 等のループバック入力が必要" }
+  ];
+  if (bridgeReachable !== null) {
+    checks.push({ id: "bridge", label: "MCPブリッジ接続", ok: Boolean(bridgeReachable), optional: true, fix: "node mcp/server.js を起動し、ポートを一致させる" });
+  }
+  const blocking = checks.filter((check) => !check.ok && !check.optional);
+  return { checks, okCount: checks.filter((c) => c.ok).length, total: checks.length, ready: blocking.length === 0 };
 }
 
 export function exportMidi(project, profile = getProfile(project)) {

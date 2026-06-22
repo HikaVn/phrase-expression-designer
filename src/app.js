@@ -1,5 +1,10 @@
 import {
   BUILT_IN_PROFILES,
+  DEFAULT_INTERPRETATION,
+  ENGINE_WIZARDS,
+  engineWizardById,
+  buildEngineProfile,
+  autoAssignKeyswitches,
   INTERNAL_PARAMETERS,
   PHRASE_TEMPLATES,
   addCrescendo,
@@ -8,6 +13,7 @@ import {
   applyBatchProperties,
   applyDynamic,
   applyNoteLetter,
+  parsePhrase,
   applyPhraseTemplate,
   beamGroups,
   dynamicCommandFromText,
@@ -23,6 +29,9 @@ import {
   computePerformanceNotes,
   copySelection,
   createInitialProject,
+  createDemoPhraseProject,
+  getSetupGuide,
+  runSetupDiagnostics,
   createSetupReport,
   createTestProject,
   deleteCurvePoint,
@@ -31,6 +40,10 @@ import {
   formatPosition,
   generateCcEvents,
   generateMidiEventList,
+  generatePlaybackMessages,
+  buildCalibrationProbe,
+  reduceCalibrationMeasurement,
+  fitCalibrationCurve,
   getArticulation,
   importMidi,
   mixedValue,
@@ -61,7 +74,32 @@ let lastRepeatAction = null;
 let dragState = null;
 let suppressNextCurveClick = false;
 let selectedCurvePoint = null;
+let wizardEngineId = null;
+let wizardArtSelection = new Set();
+let wizardCtrlSelection = new Set();
+let midiAccess = null;
+let midiOutput = null;
+let playbackTimer = null;
+let isPlaying = false;
+let loopEnabled = false;
+let playbackMessagesFn = null;
+let playbackLoop = false;
+let bridgeTimer = null;
+let bridgePollUrl = null;
+let interpDialEls = {};
+const PLAYBACK_LEAD_MS = 120;
 const AUTOSAVE_KEY = "phraseExpressionDesigner.autosave.v1";
+// Sub-dials that open the interpretation magic-numbers for live ear-tuning.
+const INTERPRETATION_DIALS = [
+  { key: "humanizeMs", label: "ゆらぎ(時間)", max: 30, unit: "ms" },
+  { key: "breathMs", label: "息継ぎ", max: 120, unit: "ms" },
+  { key: "apexTenutoMs", label: "頂点テヌート", max: 150, unit: "ms" },
+  { key: "finalRelaxMs", label: "終止の緩み", max: 120, unit: "ms" },
+  { key: "legatoReachMs", label: "レガート届かせ", max: 60, unit: "ms" },
+  { key: "swell", label: "強弱アーチ", max: 40, unit: "" },
+  { key: "accent", label: "拍節アクセント", max: 30, unit: "" },
+  { key: "humanizeVel", label: "ゆらぎ(強弱)", max: 20, unit: "" }
+];
 
 const svgNs = "http://www.w3.org/2000/svg";
 const NOTE_HEAD_RX = 8.4;
@@ -88,8 +126,12 @@ document.addEventListener("DOMContentLoaded", () => {
   populateProfiles();
   populateTemplateButtons();
   populateNoteExpressionParameters();
+  populateEngineWizards();
+  populateInterpretationDials();
   bindEvents();
   render();
+  initMidi();
+  populateAudioInputs();
 });
 
 function bindElements() {
@@ -107,6 +149,8 @@ function bindElements() {
     "notationModeButton",
     "performanceModeButton",
     "durationSelect",
+    "phraseInput",
+    "phraseEnterButton",
     "restButton",
     "tieButton",
     "slurButton",
@@ -114,6 +158,22 @@ function bindElements() {
     "decrescendoButton",
     "bpmInput",
     "ppqInput",
+    "midiOutputSelect",
+    "playButton",
+    "stopButton",
+    "loopToggle",
+    "testToneButton",
+    "demoButton",
+    "setupButton",
+    "setupDialog",
+    "setupDawSelect",
+    "setupSteps",
+    "setupDiagnoseButton",
+    "setupDiagnostics",
+    "bridgeToggle",
+    "bridgePort",
+    "bridgeStatus",
+    "midiStatusOutput",
     "cursorOutput",
     "selectionOutput",
     "autosaveOutput",
@@ -126,6 +186,9 @@ function bindElements() {
     "eventListBody",
     "profileSelect",
     "wizardButton",
+    "audioInputSelect",
+    "calibrateButton",
+    "calibStatus",
     "batchSummary",
     "applyPitch",
     "pitchInput",
@@ -142,6 +205,11 @@ function bindElements() {
     "validationList",
     "reportText",
     "wizardDialog",
+    "wizardEngineButtons",
+    "wizardEngineSummary",
+    "wizardAutoKsButton",
+    "wizardArtPresets",
+    "wizardCtrlPresets",
     "wizardBaseSelect",
     "wizardEngineInput",
     "wizardLibraryInput",
@@ -167,6 +235,10 @@ function bindElements() {
     "noteExprInfluenceOut",
     "noteExprApplyButton",
     "noteExprClearButton",
+    "interpEnabled",
+    "interpAmount",
+    "interpAmountOut",
+    "interpDials",
     "clefSelect",
     "keySelect"
   ].forEach((id) => {
@@ -248,6 +320,13 @@ function bindEvents() {
   els.selectModeButton.addEventListener("click", () => setMode("select"));
   els.notationModeButton.addEventListener("click", () => setMode("notation"));
   els.performanceModeButton.addEventListener("click", () => setMode("performance"));
+  els.phraseEnterButton.addEventListener("click", enterPhraseText);
+  els.phraseInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      enterPhraseText();
+    }
+  });
   els.restButton.addEventListener("click", () => mutate("Add rest", () => addRest(project, currentDurationTicks())));
   els.tieButton.addEventListener("click", () => mutate("Toggle tie", () => toggleTie(project)));
   els.slurButton.addEventListener("click", () => mutate("Add slur", () => addSlur(project)));
@@ -260,12 +339,33 @@ function bindEvents() {
   els.ppqInput.addEventListener("change", () => mutate("Change PPQ", () => {
     project.ppq = clamp(Number(els.ppqInput.value), 120, 3840);
   }));
+  els.midiOutputSelect.addEventListener("change", () => {
+    midiOutput = midiAccess?.outputs.get(els.midiOutputSelect.value) ?? null;
+    els.midiStatusOutput.textContent = midiOutput ? `→ ${midiOutput.name}` : "出力先を選択";
+  });
+  els.playButton.addEventListener("click", startLivePlayback);
+  els.stopButton.addEventListener("click", stopLivePlayback);
+  els.loopToggle.addEventListener("change", () => {
+    loopEnabled = els.loopToggle.checked;
+  });
+  els.testToneButton.addEventListener("click", sendTestTone);
+  els.demoButton.addEventListener("click", loadDemoPhrase);
+  els.setupButton.addEventListener("click", openSetup);
+  els.setupDawSelect.addEventListener("change", renderSetupSteps);
+  els.setupDiagnoseButton.addEventListener("click", runDiagnostics);
+  els.bridgeToggle.addEventListener("change", toggleBridge);
+  els.calibrateButton.addEventListener("click", runAutoCalibration);
   els.profileSelect.addEventListener("change", () => mutate("Change profile", () => {
     project.profileId = els.profileSelect.value;
     normalizeArticulationsForProfile();
   }));
   els.wizardButton.addEventListener("click", openWizard);
-  els.wizardBaseSelect.addEventListener("change", () => fillWizardFromProfile(profileById(els.wizardBaseSelect.value)));
+  els.wizardBaseSelect.addEventListener("change", () => {
+    clearEngineSelection();
+    fillWizardFromProfile(profileById(els.wizardBaseSelect.value));
+    renderWizardValidation();
+  });
+  els.wizardAutoKsButton.addEventListener("click", onWizardAutoAssignKeyswitches);
   els.wizardRefreshButton.addEventListener("click", () => renderWizardValidation());
   els.wizardApplyButton.addEventListener("click", applyWizardProfile);
   els.applyBatchButton.addEventListener("click", onBatchApply);
@@ -341,6 +441,19 @@ function bindEvents() {
     const parameter = els.noteExprParameter.value;
     mutate(`Clear note ${parameter}`, () =>
       setNoteExpression(project, { parameter, value: null }));
+  });
+  els.interpEnabled.addEventListener("change", () => {
+    mutate(els.interpEnabled.checked ? "Enable interpretation" : "Disable interpretation", () => {
+      project.interpretation = { ...DEFAULT_INTERPRETATION, ...(project.interpretation ?? {}), enabled: els.interpEnabled.checked };
+    });
+  });
+  els.interpAmount.addEventListener("input", () => {
+    els.interpAmountOut.textContent = `${els.interpAmount.value}%`;
+  });
+  els.interpAmount.addEventListener("change", () => {
+    mutate(`Interpretation ${els.interpAmount.value}%`, () => {
+      project.interpretation = { ...DEFAULT_INTERPRETATION, ...(project.interpretation ?? {}), amount: Number(els.interpAmount.value) / 100 };
+    });
   });
   document.addEventListener("keydown", onKeyDown);
 }
@@ -466,6 +579,7 @@ function durationChangeSummary(result) {
 function openWizard() {
   els.wizardBaseSelect.replaceChildren(...profiles.map((profile) => option(profile.id, `${profile.engine} / ${profile.library}`)));
   els.wizardBaseSelect.value = project.profileId;
+  clearEngineSelection();
   fillWizardFromProfile(activeProfile());
   renderWizardValidation();
   if (typeof els.wizardDialog.showModal === "function") els.wizardDialog.showModal();
@@ -483,18 +597,159 @@ function fillWizardFromProfile(profile) {
   els.wizardKeyswitchHighInput.value = profile.keyswitchRange?.high ?? 36;
   els.wizardCcLookAheadInput.value = profile.timing?.ccLookAheadMs ?? 80;
   els.wizardPcLookAheadInput.value = profile.timing?.programChangeLookAheadMs ?? 150;
-  els.wizardArticulationsText.value = profile.articulations.map((art) => {
-    const trigger = art.trigger?.type === "keyswitch" ? art.trigger.noteName : art.trigger?.type ?? "default";
+  els.wizardArticulationsText.value = articulationsToText(profile.articulations);
+  els.wizardControlsText.value = controlsToText(profile.controls);
+  els.wizardInstructionsText.value = (profile.setupInstructions ?? []).join("\n");
+}
+
+function articulationsToText(articulations) {
+  return (articulations ?? []).map((art) => {
+    const trigger = art.trigger?.type === "keyswitch" ? (art.trigger.noteName ?? "") : art.trigger?.type ?? "default";
     const lookAhead = art.trigger?.lookAheadMs ?? 100;
     const perf = art.performance ?? {};
     return [art.id, art.name, art.type, trigger, lookAhead, perf.globalOffsetMs ?? 0, perf.overlapPercent ?? 0, perf.overlapMaxMs ?? 0].join("\t");
   }).join("\n");
-  els.wizardControlsText.value = profile.controls.map((control) => {
+}
+
+function controlsToText(controls) {
+  return (controls ?? []).map((control) => {
     const target = control.target ?? { type: "manual" };
     const value = target.type === "midiCC" ? target.cc : target.suggestedCC ?? "";
-    return [control.internalParameter, control.label, target.type, value, control.enabled === false ? "off" : "on"].join("\t");
+    const calibration = target.type === "midiCC" ? (control.calibrationCurveId ?? "") : "";
+    return [control.internalParameter, control.label, target.type, value, control.enabled === false ? "off" : "on", calibration].join("\t");
   }).join("\n");
-  els.wizardInstructionsText.value = (profile.setupInstructions ?? []).join("\n");
+}
+
+// --- Engine-specific Setup Wizards ---------------------------------------
+
+function populateEngineWizards() {
+  els.wizardEngineButtons.replaceChildren(...ENGINE_WIZARDS.map((wizard) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "engine-button";
+    button.dataset.engineId = wizard.id;
+    button.textContent = wizard.label;
+    button.addEventListener("click", () => selectEngineWizard(wizard.id));
+    return button;
+  }));
+}
+
+// Build the interpretation sub-dials once; renderInspector syncs their values.
+function populateInterpretationDials() {
+  interpDialEls = {};
+  els.interpDials.replaceChildren(...INTERPRETATION_DIALS.map((dial) => {
+    const row = document.createElement("div");
+    row.className = "influence-row";
+    const label = document.createElement("label");
+    label.textContent = dial.label;
+    label.setAttribute("for", `interpDial_${dial.key}`);
+    const input = document.createElement("input");
+    input.type = "range";
+    input.id = `interpDial_${dial.key}`;
+    input.min = "0";
+    input.max = String(dial.max);
+    input.step = "1";
+    const out = document.createElement("output");
+    input.addEventListener("input", () => {
+      out.textContent = `${input.value}${dial.unit}`;
+    });
+    input.addEventListener("change", () => {
+      mutate(`Interpretation ${dial.key} ${input.value}`, () => {
+        project.interpretation = { ...DEFAULT_INTERPRETATION, ...(project.interpretation ?? {}), [dial.key]: Number(input.value) };
+      });
+    });
+    row.append(label, input, out);
+    interpDialEls[dial.key] = { input, out, unit: dial.unit };
+    return row;
+  }));
+}
+
+function selectEngineWizard(id) {
+  const wizard = engineWizardById(id);
+  if (!wizard) return;
+  wizardEngineId = id;
+  wizardArtSelection = new Set(wizard.articulationPresets.map((art) => art.id));
+  wizardCtrlSelection = new Set(wizard.controlPresets.map((control) => control.internalParameter));
+  // Start from the engine's default identity so the build uses engine defaults.
+  els.wizardLibraryInput.value = "";
+  els.wizardPatchInput.value = "";
+  els.wizardEngineSummary.textContent = wizard.summary ?? "";
+  renderEngineButtonsState();
+  renderWizardPresets(wizard);
+  rebuildWizardFromSelection();
+}
+
+function clearEngineSelection() {
+  wizardEngineId = null;
+  wizardArtSelection = new Set();
+  wizardCtrlSelection = new Set();
+  els.wizardEngineSummary.textContent = "";
+  els.wizardArtPresets.replaceChildren();
+  els.wizardCtrlPresets.replaceChildren();
+  renderEngineButtonsState();
+}
+
+function renderEngineButtonsState() {
+  els.wizardEngineButtons.querySelectorAll(".engine-button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.engineId === wizardEngineId);
+  });
+}
+
+function renderWizardPresets(wizard) {
+  els.wizardArtPresets.replaceChildren(...wizard.articulationPresets.map((art) =>
+    presetToggle(art.id, art.name, wizardArtSelection, () => rebuildWizardFromSelection())));
+  els.wizardCtrlPresets.replaceChildren(...wizard.controlPresets.map((control) =>
+    presetToggle(control.internalParameter, control.label, wizardCtrlSelection, () => rebuildWizardFromSelection())));
+}
+
+function presetToggle(value, label, selectionSet, onChange) {
+  const wrapper = document.createElement("label");
+  wrapper.className = "preset-toggle";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = selectionSet.has(value);
+  checkbox.addEventListener("change", () => {
+    if (checkbox.checked) selectionSet.add(value);
+    else selectionSet.delete(value);
+    onChange();
+  });
+  const text = document.createElement("span");
+  text.textContent = label;
+  wrapper.append(checkbox, text);
+  return wrapper;
+}
+
+function rebuildWizardFromSelection() {
+  if (!wizardEngineId) return;
+  let profile;
+  try {
+    profile = buildEngineProfile(wizardEngineId, {
+      library: els.wizardLibraryInput.value.trim() || undefined,
+      patch: els.wizardPatchInput.value.trim() || undefined,
+      articulationIds: [...wizardArtSelection],
+      controlIds: [...wizardCtrlSelection]
+    });
+  } catch (error) {
+    els.statusText.textContent = `Wizardエラー: ${error.message}`;
+    return;
+  }
+  fillWizardFromProfile(profile);
+  renderWizardValidation(profile);
+}
+
+function onWizardAutoAssignKeyswitches() {
+  const wizard = wizardEngineId ? engineWizardById(wizardEngineId) : null;
+  const startNote = wizard?.keyswitchStartNote ?? "C0";
+  const noteNaming = els.wizardNoteNamingSelect.value || wizard?.noteNaming || "C3=60";
+  let articulations;
+  try {
+    articulations = parseWizardArticulations(els.wizardArticulationsText.value);
+  } catch (error) {
+    els.statusText.textContent = `Wizardエラー: ${error.message}`;
+    return;
+  }
+  els.wizardArticulationsText.value = articulationsToText(autoAssignKeyswitches(articulations, startNote, noteNaming));
+  renderWizardValidation();
 }
 
 function applyWizardProfile() {
@@ -653,6 +908,7 @@ function onKeyDown(event) {
   }
   if (key === "Escape") {
     event.preventDefault();
+    stopLivePlayback();
     mutate("Clear selection", () => {
       project.selectedIds = [];
       project.selectedBars = [];
@@ -888,6 +1144,18 @@ function renderInspector() {
   } else if (notes.length > 0) {
     els.noteExprInfluenceOut.textContent = "Mixed";
   }
+
+  // Interpretation (the retained performer) reflects project state.
+  const interpretation = { ...DEFAULT_INTERPRETATION, ...(project.interpretation ?? {}) };
+  els.interpEnabled.checked = interpretation.enabled;
+  const interpPercent = Math.round(clamp(interpretation.amount, 0, 1) * 100);
+  els.interpAmount.value = String(interpPercent);
+  els.interpAmountOut.textContent = `${interpPercent}%`;
+  Object.entries(interpDialEls).forEach(([key, { input, out, unit }]) => {
+    const value = Math.round(interpretation[key] ?? 0);
+    input.value = String(value);
+    out.textContent = `${value}${unit}`;
+  });
 }
 
 function syncDurationSelect() {
@@ -1513,6 +1781,416 @@ function downloadMidi(targetProject, filename) {
   els.statusText.textContent = `${filename}を書き出しました。`;
 }
 
+// --- Live MIDI output (Web MIDI) -----------------------------------------
+// The app stays silent; it streams the generated events to an external MIDI
+// port (e.g. an IAC bus into Logic) so a real instrument sounds them. This is
+// the feedback loop — the body (sampler) lives outside, the brain here.
+
+function disableMidiControls() {
+  [els.midiOutputSelect, els.playButton, els.stopButton, els.loopToggle, els.testToneButton].forEach((el) => {
+    if (el) el.disabled = true;
+  });
+}
+
+async function initMidi() {
+  if (!navigator.requestMIDIAccess) {
+    els.midiStatusOutput.textContent = "Web MIDI非対応(Chrome系/localhost)";
+    disableMidiControls();
+    return;
+  }
+  try {
+    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+    midiAccess.addEventListener?.("statechange", populateMidiOutputs);
+    populateMidiOutputs();
+  } catch (error) {
+    els.midiStatusOutput.textContent = "MIDIアクセス不可";
+    disableMidiControls();
+  }
+}
+
+function populateMidiOutputs() {
+  if (!midiAccess) return;
+  const outputs = [...midiAccess.outputs.values()];
+  const previous = midiOutput?.id;
+  els.midiOutputSelect.replaceChildren(
+    option("", outputs.length ? "出力先を選択" : "出力先なし"),
+    ...outputs.map((out) => option(out.id, out.name ?? out.id))
+  );
+  if (previous && outputs.some((out) => out.id === previous)) {
+    els.midiOutputSelect.value = previous;
+    els.midiStatusOutput.textContent = `→ ${midiOutput.name}`;
+  } else {
+    midiOutput = null;
+    els.midiStatusOutput.textContent = outputs.length ? "出力先を選択" : "出力先なし";
+  }
+}
+
+function startLivePlayback() {
+  if (!midiOutput) {
+    els.midiStatusOutput.textContent = "出力先を選択してください";
+    return;
+  }
+  stopLivePlayback();
+  playbackMessagesFn = () => generatePlaybackMessages(project, activeProfile());
+  playbackLoop = loopEnabled;
+  isPlaying = true;
+  els.playButton.classList.add("active");
+  scheduleCycle();
+}
+
+// Schedule one pass; when looping, re-generate each cycle so tweaking the dials
+// / interpretation toggle is heard on the next loop.
+function scheduleCycle() {
+  if (!isPlaying || !midiOutput || !playbackMessagesFn) return;
+  const messages = playbackMessagesFn();
+  if (messages.length === 0) {
+    els.midiStatusOutput.textContent = "再生するイベントがありません";
+    stopLivePlayback();
+    return;
+  }
+  const startAt = performance.now() + PLAYBACK_LEAD_MS;
+  let endMs = 0;
+  messages.forEach((message) => {
+    midiOutput.send(message.bytes, startAt + message.timeMs);
+    endMs = Math.max(endMs, message.timeMs);
+  });
+  els.midiStatusOutput.textContent = playbackLoop ? "ループ再生中…" : "再生中…";
+  const total = PLAYBACK_LEAD_MS + endMs;
+  if (playbackLoop) {
+    playbackTimer = setTimeout(scheduleCycle, total + 350); // small luft between loops
+  } else {
+    playbackTimer = setTimeout(stopLivePlayback, total + 250);
+  }
+}
+
+function stopLivePlayback() {
+  if (playbackTimer) {
+    clearTimeout(playbackTimer);
+    playbackTimer = null;
+  }
+  if (midiOutput) {
+    midiOutput.clear?.(); // cancel anything still scheduled
+    midiOutput.send([0xb0, 120, 0]); // all sound off
+    midiOutput.send([0xb0, 123, 0]); // all notes off
+  }
+  if (isPlaying) {
+    els.midiStatusOutput.textContent = midiOutput ? `→ ${midiOutput.name}` : "停止";
+  }
+  isPlaying = false;
+  els.playButton.classList.remove("active");
+}
+
+// Send a single note to confirm the IAC -> Logic routing works before judging
+// any music. Independent of the transport.
+function sendTestTone() {
+  if (!midiOutput) {
+    els.midiStatusOutput.textContent = "出力先を選択してください";
+    return;
+  }
+  const now = performance.now();
+  midiOutput.send([0x90, 60, 90], now + 20);
+  midiOutput.send([0x80, 60, 0], now + 520);
+  els.midiStatusOutput.textContent = "テスト音を送出 (C4)";
+}
+
+function enterPhraseText() {
+  const text = els.phraseInput.value.trim();
+  if (!text) return;
+  let parsed;
+  try {
+    parsed = parsePhrase(text, { ppq: project.ppq, startTick: project.cursorTick, velocity: 80, articulation: "sustain" });
+  } catch (error) {
+    els.statusText.textContent = `テキスト入力エラー: ${error.message}`;
+    return;
+  }
+  if (parsed.notes.length === 0 && parsed.rests.length === 0) return;
+  mutate("Enter phrase text", () => {
+    project.notes.push(...parsed.notes);
+    project.rests.push(...parsed.rests);
+    project.selectedIds = parsed.notes.map((note) => note.id);
+    project.selectedBars = [];
+    project.cursorTick = parsed.endTick;
+  });
+  els.phraseInput.value = "";
+}
+
+// Curated setup guide (IAC / DAW / app / bridge / loopback), rendered from the
+// pure getSetupGuide — runnable commands get a copy button, refs get a link.
+function openSetup() {
+  renderSetupSteps();
+  if (typeof els.setupDialog.showModal === "function") els.setupDialog.showModal();
+  else els.setupDialog.setAttribute("open", "");
+}
+
+function renderSetupSteps() {
+  const guide = getSetupGuide({ daw: els.setupDawSelect.value });
+  els.setupSteps.replaceChildren(...guide.steps.map((step) => {
+    const li = document.createElement("li");
+    li.className = "setup-step";
+    const title = document.createElement("div");
+    title.className = "setup-step-title";
+    title.textContent = step.title;
+    const detail = document.createElement("p");
+    detail.className = "setup-step-detail";
+    detail.textContent = step.detail;
+    li.append(title, detail);
+    if (step.command) {
+      const row = document.createElement("div");
+      row.className = "setup-cmd";
+      const code = document.createElement("code");
+      code.textContent = step.command;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "コピー";
+      copy.addEventListener("click", () => {
+        navigator.clipboard?.writeText(step.command);
+        copy.textContent = "コピー済";
+        setTimeout(() => { copy.textContent = "コピー"; }, 1200);
+      });
+      row.append(code, copy);
+      li.append(row);
+    }
+    if (step.url) {
+      const link = document.createElement("a");
+      link.href = step.url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.className = "setup-link";
+      link.textContent = step.url.startsWith("http") ? "公式/リンクを開く" : step.url;
+      li.append(link);
+    }
+    return li;
+  }));
+}
+
+// Gather what the browser can see and run the pure diagnostics, so the user
+// learns exactly which link in the chain is missing (and the fix).
+async function runDiagnostics() {
+  const webMidiAvailable = Boolean(midiAccess) || Boolean(navigator.requestMIDIAccess);
+  const midiOutputNames = midiAccess ? [...midiAccess.outputs.values()].map((o) => o.name ?? o.id) : [];
+  let audioInputCount = 0;
+  try {
+    const devices = (await navigator.mediaDevices?.enumerateDevices?.()) ?? [];
+    audioInputCount = devices.filter((d) => d.kind === "audioinput").length;
+  } catch (error) {
+    audioInputCount = 0;
+  }
+  let bridgeReachable = null;
+  if (els.bridgeToggle.checked) {
+    bridgeReachable = false;
+    try {
+      const res = await fetch(`http://localhost:${Number(els.bridgePort.value) || 4274}/health`, { cache: "no-store" });
+      bridgeReachable = res.ok;
+    } catch (error) {
+      bridgeReachable = false;
+    }
+  }
+  renderDiagnostics(runSetupDiagnostics({ webMidiAvailable, midiOutputNames, audioInputCount, bridgeReachable }));
+}
+
+function renderDiagnostics(result) {
+  els.setupDiagnostics.replaceChildren(...result.checks.map((check) => {
+    const li = document.createElement("li");
+    li.className = check.ok ? "diag-ok" : (check.optional ? "diag-warn" : "diag-err");
+    const mark = check.ok ? "✓" : (check.optional ? "△" : "✗");
+    li.textContent = check.ok ? `${mark} ${check.label}` : `${mark} ${check.label} — ${check.fix}`;
+    return li;
+  }));
+  const summary = document.createElement("li");
+  summary.className = result.ready ? "diag-ok" : "diag-err";
+  summary.textContent = result.ready ? "▶ 再生できる状態です" : "再生に必要な項目が不足しています";
+  els.setupDiagnostics.append(summary);
+}
+
+function loadDemoPhrase() {
+  mutate("Load demo phrase", () => {
+    const profileId = project.profileId;
+    project = createDemoPhraseProject(profileId);
+  }, { replaceProject: true });
+  els.statusText.textContent = "デモ譜を読み込みました（解釈ON）。Live MIDIで▶、解釈チェックやループ・内訳ダイヤルで聴き比べてください。";
+}
+
+// Play an externally-delivered project (from the MCP bridge) without disturbing
+// the editor's own project — just routes it through the same Web MIDI transport.
+function playDeliveredProject(delivered, loop) {
+  if (!midiOutput) {
+    els.midiStatusOutput.textContent = "出力先(IAC)未選択：ブリッジ再生不可";
+    return;
+  }
+  let target;
+  try {
+    target = normalizeProject(delivered);
+  } catch (error) {
+    els.midiStatusOutput.textContent = `ブリッジ受信エラー: ${error.message}`;
+    return;
+  }
+  const profile = profileById(target.profileId) ?? activeProfile();
+  stopLivePlayback();
+  playbackMessagesFn = () => generatePlaybackMessages(target, profile);
+  playbackLoop = Boolean(loop);
+  isPlaying = true;
+  els.playButton.classList.add("active");
+  scheduleCycle();
+}
+
+// --- MCP live bridge (browser side): short-poll the local MCP server for
+// play/stop commands and route them through Web MIDI. -----------------------
+function toggleBridge() {
+  if (els.bridgeToggle.checked) startBridgePolling();
+  else stopBridgePolling();
+}
+
+function startBridgePolling() {
+  if (bridgeTimer) {
+    clearTimeout(bridgeTimer); // never run two poll loops at once
+    bridgeTimer = null;
+  }
+  const port = Number(els.bridgePort.value) || 4274;
+  bridgePollUrl = `http://localhost:${port}/poll`;
+  setBridgeStatus("接続中…");
+  pollBridge();
+}
+
+function stopBridgePolling() {
+  if (bridgeTimer) {
+    clearTimeout(bridgeTimer);
+    bridgeTimer = null;
+  }
+  setBridgeStatus("未接続");
+}
+
+async function pollBridge() {
+  if (!els.bridgeToggle.checked) return;
+  try {
+    const res = await fetch(bridgePollUrl, { cache: "no-store" });
+    if (res.status === 200) {
+      const command = await res.json();
+      handleBridgeCommand(command);
+    } else {
+      setBridgeStatus("接続OK（待機中）");
+    }
+  } catch (error) {
+    setBridgeStatus(`未接続（MCPサーバ起動？）`);
+  }
+  if (els.bridgeToggle.checked) bridgeTimer = setTimeout(pollBridge, 250);
+}
+
+function handleBridgeCommand(command) {
+  if (!command || typeof command !== "object") return;
+  if (command.type === "stop") {
+    stopLivePlayback();
+    setBridgeStatus("受信: stop");
+    return;
+  }
+  if (command.type === "play" && command.project) {
+    playDeliveredProject(command.project, command.loop);
+    setBridgeStatus(`受信: play (${command.project.notes?.length ?? 0}音)`);
+  }
+}
+
+function setBridgeStatus(text) {
+  if (els.bridgeStatus) els.bridgeStatus.textContent = text;
+}
+
+// --- Auto-calibration (loopback) -----------------------------------------
+// Sweep the intensity CC on a held note, capture the looped-back audio, measure
+// loudness per step, fit a curve that linearises the response, and store it on
+// the active profile. Browser-only (Web MIDI out + getUserMedia/Web Audio in).
+
+async function populateAudioInputs() {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    els.audioInputSelect.disabled = true;
+    els.calibrateButton.disabled = true;
+    return;
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((d) => d.kind === "audioinput");
+    els.audioInputSelect.replaceChildren(
+      option("", inputs.length ? "既定の入力" : "入力なし"),
+      ...inputs.map((d, i) => option(d.deviceId, d.label || `入力 ${i + 1}`))
+    );
+  } catch (error) {
+    els.audioInputSelect.disabled = true;
+  }
+}
+
+function setCalibStatus(text) {
+  if (els.calibStatus) els.calibStatus.textContent = text;
+  els.statusText.textContent = text;
+}
+
+async function runAutoCalibration() {
+  if (!midiOutput) {
+    setCalibStatus("出力先(IAC)を選択してください");
+    return;
+  }
+  const profile = activeProfile();
+  const control = profile.controls.find((c) => c.internalParameter === "intensity" && c.target?.type === "midiCC");
+  if (!control) {
+    setCalibStatus("intensityのmidiCC制御がProfileにありません");
+    return;
+  }
+  let stream;
+  try {
+    const deviceId = els.audioInputSelect.value;
+    stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true });
+  } catch (error) {
+    setCalibStatus(`オーディオ入力にアクセスできません: ${error.message}`);
+    return;
+  }
+  populateAudioInputs(); // labels are available once permission is granted
+
+  const probe = buildCalibrationProbe({ cc: control.target.cc, pitch: 60, velocity: 100, steps: 16, dwellMs: 300 });
+  const sendBase = performance.now() + PLAYBACK_LEAD_MS;
+  const samples = [];
+  els.calibrateButton.disabled = true;
+  setCalibStatus("計測中… 音を鳴らしています");
+  // try/finally so a thrown send / closed port never leaks the sampling
+  // interval or leaves the button permanently disabled.
+  let interval = null;
+  let ctx = null;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    ctx = new AudioCtx();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    const buffer = new Float32Array(analyser.fftSize);
+    interval = setInterval(() => {
+      analyser.getFloatTimeDomainData(buffer);
+      let sum = 0;
+      for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
+      samples.push({ timeMs: performance.now() - sendBase, rms: Math.sqrt(sum / buffer.length) });
+    }, 20);
+    probe.messages.forEach((m) => midiOutput.send(m.bytes, sendBase + m.timeMs));
+    await new Promise((resolve) => setTimeout(resolve, PLAYBACK_LEAD_MS + probe.totalMs + 200));
+  } finally {
+    if (interval) clearInterval(interval);
+    midiOutput.clear?.();
+    midiOutput.send([0xb0, 120, 0]);
+    midiOutput.send([0xb0, 123, 0]);
+    stream.getTracks().forEach((t) => t.stop());
+    ctx?.close?.();
+    els.calibrateButton.disabled = false;
+  }
+
+  const measured = reduceCalibrationMeasurement(samples, probe.windows);
+  const levels = measured.map((m) => m.level).filter(Number.isFinite);
+  const span = levels.length ? Math.max(...levels) - Math.min(...levels) : 0;
+  if (span < 3) {
+    setCalibStatus(`応答を検出できません (${span.toFixed(1)}dB)。ループバック配線/入力を確認してください`);
+    return;
+  }
+  const curveId = `measured_${control.internalParameter}`;
+  const curve = fitCalibrationCurve(measured, { id: curveId, name: `Measured ${control.internalParameter}` });
+  profile.calibration = [...(profile.calibration ?? []).filter((c) => c.id !== curveId), curve];
+  control.calibrationCurveId = curveId;
+  saveAutosave();
+  render();
+  setCalibStatus(`校正完了: ${control.label} (レンジ ${span.toFixed(1)}dB / ${measured.length}点)`);
+}
+
 function downloadJson(data, filename) {
   downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), filename);
   els.statusText.textContent = `${filename}を書き出しました。`;
@@ -1562,18 +2240,20 @@ function parseWizardControls(text) {
   const rows = parseRows(text);
   if (rows.length === 0) throw new Error("Controlsが空です。");
   return rows.map((cols, index) => {
-    const [internalParameter, label, targetType = "manual", value = "", enabled = "on"] = cols;
+    const [internalParameter, label, targetType = "manual", value = "", enabled = "on", calibration = ""] = cols;
     if (!internalParameter || !label) throw new Error(`Controls ${index + 1}行目のinternalParameter/labelが不足しています。`);
     const target = { type: targetType };
     if (targetType === "midiCC") target.cc = Number(value);
     if (targetType === "midiLearnRequired") target.suggestedCC = value === "" ? undefined : Number(value);
     if (targetType === "manual" || targetType === "unsupported") target.reason = "Confirm this target manually.";
-    return {
+    const control = {
       internalParameter,
       label,
       target,
       enabled: enabled.toLowerCase() !== "off"
     };
+    if (targetType === "midiCC") control.calibrationCurveId = calibration.trim() || "dynamic_default";
+    return control;
   });
 }
 
@@ -1630,6 +2310,7 @@ function normalizeProject(input) {
     slurs: Array.isArray(input.slurs) ? input.slurs : [],
     crescendos: Array.isArray(input.crescendos) ? input.crescendos : [],
     expressionCurves: input.expressionCurves ?? base.expressionCurves,
+    interpretation: { ...base.interpretation, ...(input.interpretation ?? {}) },
     selectedIds: [],
     selectedBars: [],
     cursorTick: Number(input.cursorTick ?? 0),
