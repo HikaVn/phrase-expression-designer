@@ -49,10 +49,11 @@ import {
   upsertCurvePoint,
   validateProfile
 } from "./core.js";
+import { createProfileStore } from "./profile-store.js";
 
 const els = {};
 let project = createInitialProject();
-let profiles = structuredClone(BUILT_IN_PROFILES);
+const profileStore = createProfileStore(BUILT_IN_PROFILES);
 let undoStack = [];
 let redoStack = [];
 let currentCurveParameter = "intensity";
@@ -209,10 +210,10 @@ function commitDynamicPopover() {
 }
 
 function populateProfiles() {
-  els.profileSelect.replaceChildren(...profiles.map((profile) => option(profile.id, `${profile.engine} / ${profile.library}`)));
+  els.profileSelect.replaceChildren(...profileStore.all().map((profile) => option(profile.id, `${profile.engine} / ${profile.library}`)));
   els.profileSelect.value = project.profileId;
-  if (!els.profileSelect.value && profiles[0]) {
-    project.profileId = profiles[0].id;
+  if (!els.profileSelect.value && profileStore.all()[0]) {
+    project.profileId = profileStore.all()[0].id;
     els.profileSelect.value = project.profileId;
   }
   populateArticulations();
@@ -379,7 +380,7 @@ function onProjectImport(event) {
         } else {
           project = normalizeProject(data);
         }
-        if (!profileById(project.profileId)) project.profileId = profiles[0].id;
+        if (!profileById(project.profileId)) project.profileId = profileStore.all()[0].id;
       }, { replaceProject: true });
       els.statusText.textContent = `${file.name}を読み込みました。`;
     } catch (error) {
@@ -464,7 +465,7 @@ function durationChangeSummary(result) {
 }
 
 function openWizard() {
-  els.wizardBaseSelect.replaceChildren(...profiles.map((profile) => option(profile.id, `${profile.engine} / ${profile.library}`)));
+  els.wizardBaseSelect.replaceChildren(...profileStore.all().map((profile) => option(profile.id, `${profile.engine} / ${profile.library}`)));
   els.wizardBaseSelect.value = project.profileId;
   fillWizardFromProfile(activeProfile());
   renderWizardValidation();
@@ -790,7 +791,7 @@ function repeatLastAction() {
 }
 
 function activeProfile() {
-  return profileById(project.profileId) ?? profiles[0];
+  return profileById(project.profileId) ?? profileStore.all()[0];
 }
 
 function saveAutosave() {
@@ -809,7 +810,7 @@ function restoreAutosave() {
     const data = JSON.parse(raw);
     if (Array.isArray(data.profiles)) mergeProfiles(data.profiles);
     if (data.project) project = normalizeProject(data.project);
-    if (!profileById(project.profileId)) project.profileId = profiles[0].id;
+    if (!profileById(project.profileId)) project.profileId = profileStore.all()[0].id;
     if (els.autosaveOutput) els.autosaveOutput.textContent = "復元済み";
   } catch (error) {
     if (els.autosaveOutput) els.autosaveOutput.textContent = "復元失敗";
@@ -817,18 +818,15 @@ function restoreAutosave() {
 }
 
 function profileById(id) {
-  return profiles.find((profile) => profile.id === id);
+  return profileStore.get(id);
 }
 
 function customProfiles() {
-  const builtInIds = new Set(BUILT_IN_PROFILES.map((profile) => profile.id));
-  return profiles.filter((profile) => !builtInIds.has(profile.id));
+  return profileStore.customs();
 }
 
 function upsertProfile(profile) {
-  const index = profiles.findIndex((item) => item.id === profile.id);
-  if (index >= 0) profiles[index] = profile;
-  else profiles.push(profile);
+  profileStore.upsert(profile);
   populateProfiles();
 }
 

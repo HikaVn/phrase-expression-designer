@@ -42,7 +42,11 @@ import {
   tickToMs,
   upsertCurvePoint,
   validateProfile,
-  velocityForDynamic
+  velocityForDynamic,
+  applyCalibrationCurve,
+  resolveCalibrationCurve,
+  calibrateCcValue,
+  DEFAULT_CALIBRATION_CURVE_ID
 } from "../src/core.js";
 
 test("tickToMs converts constant tempo ticks to milliseconds", () => {
@@ -564,4 +568,76 @@ test("keySignatureSteps lists the right symbols per clef", () => {
   assert.deepEqual(keySignatureSteps(-3, "bass"),
     [{ step: 2, symbol: "♭" }, { step: 5, symbol: "♭" }, { step: 1, symbol: "♭" }]);
   assert.deepEqual(keySignatureSteps(0, "treble"), []);
+});
+
+test("applyCalibrationCurve identity matches the historical value*127 mapping", () => {
+  const identity = { id: "dynamic_default", outMin: 0, outMax: 127, response: "linear" };
+  for (const x of [0, 0.25, 0.5, 0.75, 1]) {
+    assert.equal(applyCalibrationCurve(x, identity), Math.round(x * 127));
+  }
+  // A null curve degrades to the identity mapping (never silence).
+  assert.equal(applyCalibrationCurve(0.5, null), 64);
+  // Values are clamped into 0..1 before mapping.
+  assert.equal(applyCalibrationCurve(-1, identity), 0);
+  assert.equal(applyCalibrationCurve(2, identity), 127);
+});
+
+test("applyCalibrationCurve maps a non-linear point list and clamps the ends", () => {
+  // Soft floor / hard ceiling: 0->20, 0.5->40, 1->110.
+  const curve = { id: "soft", points: [{ in: 0, out: 20 }, { in: 0.5, out: 40 }, { in: 1, out: 110 }] };
+  assert.equal(applyCalibrationCurve(0, curve), 20);
+  assert.equal(applyCalibrationCurve(0.25, curve), 30); // halfway between 20 and 40
+  assert.equal(applyCalibrationCurve(0.5, curve), 40);
+  assert.equal(applyCalibrationCurve(0.75, curve), 75); // halfway between 40 and 110
+  assert.equal(applyCalibrationCurve(1, curve), 110);
+  // Out-of-range inputs clamp to the end points, not beyond.
+  assert.equal(applyCalibrationCurve(2, curve), 110);
+});
+
+test("resolveCalibrationCurve prefers profile curves, then built-ins, then null", () => {
+  const profile = {
+    calibration: [{ id: "soft", outMin: 10, outMax: 100 }],
+    controls: []
+  };
+  // A control that points at a real profile curve resolves to it.
+  assert.equal(resolveCalibrationCurve(profile, { calibrationCurveId: "soft" }).outMax, 100);
+  // The default id falls back to the built-in identity curve even with empty calibration.
+  assert.equal(resolveCalibrationCurve({ calibration: [] }, {}).id, DEFAULT_CALIBRATION_CURVE_ID);
+  // An unknown id resolves to null (caller falls back to identity, validation flags it).
+  assert.equal(resolveCalibrationCurve(profile, { calibrationCurveId: "missing" }), null);
+});
+
+test("built-in profiles keep identity CC output through the calibration seam", () => {
+  // Built-in controls declare calibrationCurveId 'dynamic_default' with empty
+  // profile.calibration, so calibrated output must equal the old value*127.
+  const profile = BUILT_IN_PROFILES[0];
+  const ccControl = profile.controls.find((c) => c.target?.type === "midiCC");
+  for (const x of [0, 0.3, 0.6, 1]) {
+    assert.equal(calibrateCcValue(profile, ccControl, x), Math.round(x * 127));
+  }
+});
+
+test("generateCcEvents honours a profile calibration curve", () => {
+  const project = createInitialProject();
+  const profile = structuredClone(BUILT_IN_PROFILES[0]);
+  // Give the intensity (mod wheel, CC1) control a soft-floor curve and point at it.
+  profile.calibration = [{ id: "intensity_soft", points: [{ in: 0, out: 20 }, { in: 1, out: 100 }] }];
+  const modWheel = profile.controls.find((c) => c.internalParameter === "intensity");
+  modWheel.calibrationCurveId = "intensity_soft";
+
+  const events = generateCcEvents(project, profile);
+  const intensityEvents = events.filter((e) => e.parameter === "intensity");
+  assert.ok(intensityEvents.length > 0);
+  // The curve keeps every emitted value inside the declared 20..100 window
+  // instead of the raw 0..127 range.
+  for (const event of intensityEvents) {
+    assert.ok(event.value >= 20 && event.value <= 100, `value ${event.value} outside curve range`);
+  }
+});
+
+test("validateProfile flags an unresolved calibration curve id", () => {
+  const profile = structuredClone(BUILT_IN_PROFILES[0]);
+  profile.controls.find((c) => c.internalParameter === "intensity").calibrationCurveId = "does_not_exist";
+  const messages = validateProfile(profile);
+  assert.ok(messages.some((m) => m.level === "Error" && m.message.includes("Calibration curve unresolved")));
 });

@@ -267,8 +267,11 @@ export function cloneProject(project) {
   return structuredClone(project);
 }
 
-export function getProfile(project) {
-  return BUILT_IN_PROFILES.find((profile) => profile.id === project.profileId) ?? BUILT_IN_PROFILES[0];
+// Resolve project.profileId against a profile list. Defaults to the built-ins
+// so core stays usable standalone, but callers with a runtime store (built-ins
+// plus imported/custom profiles) pass it so custom profiles resolve correctly.
+export function getProfile(project, profiles = BUILT_IN_PROFILES) {
+  return profiles.find((profile) => profile.id === project.profileId) ?? profiles[0];
 }
 
 export function getArticulation(profile, articulationId) {
@@ -857,6 +860,63 @@ export function deleteCurvePoint(project, parameter, pointIndex) {
   return true;
 }
 
+// Calibration: map an internal-parameter level (0..1) to a concrete CC value
+// (0..127) through a per-control curve, so the same musical intent lands where
+// each instrument actually needs it. Until a control declares a real curve, the
+// built-in identity curve reproduces the historical plain Math.round(value*127).
+export const DEFAULT_CALIBRATION_CURVE_ID = "dynamic_default";
+
+const BUILT_IN_CALIBRATION_CURVES = {
+  // Identity: 0..1 spread linearly over the full CC range. Behaviourally equal
+  // to the previous Math.round(value * 127).
+  dynamic_default: { id: "dynamic_default", outMin: 0, outMax: 127, response: "linear" }
+};
+
+// Find the curve a control points at: a real one in profile.calibration takes
+// precedence, then a built-in default, then null (unresolved).
+export function resolveCalibrationCurve(profile, control) {
+  const id = control?.calibrationCurveId ?? DEFAULT_CALIBRATION_CURVE_ID;
+  const fromProfile = Array.isArray(profile?.calibration)
+    ? profile.calibration.find((curve) => curve.id === id)
+    : undefined;
+  return fromProfile ?? BUILT_IN_CALIBRATION_CURVES[id] ?? null;
+}
+
+// Apply a calibration curve to a 0..1 value. A points list (piecewise linear in
+// 0..1 -> 0..127) wins; otherwise a linear outMin..outMax range. A null curve
+// degrades to the identity mapping so an unknown curve never produces silence.
+export function applyCalibrationCurve(value0to1, curve) {
+  const x = clamp(Number(value0to1), 0, 1);
+  if (!curve) return clampCc(x * 127);
+  const points = Array.isArray(curve.points) ? [...curve.points].sort((a, b) => a.in - b.in) : null;
+  if (points && points.length >= 2) {
+    if (x <= points[0].in) return clampCc(points[0].out);
+    const last = points[points.length - 1];
+    if (x >= last.in) return clampCc(last.out);
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const left = points[i];
+      const right = points[i + 1];
+      if (x >= left.in && x <= right.in) {
+        const span = right.in - left.in;
+        const ratio = span === 0 ? 0 : (x - left.in) / span;
+        return clampCc(left.out + (right.out - left.out) * ratio);
+      }
+    }
+  }
+  const outMin = Number.isFinite(curve.outMin) ? curve.outMin : 0;
+  const outMax = Number.isFinite(curve.outMax) ? curve.outMax : 127;
+  return clampCc(outMin + (outMax - outMin) * x);
+}
+
+function clampCc(value) {
+  return clamp(Math.round(value), 0, 127);
+}
+
+// The CC value for an internal-parameter level under the control's calibration.
+export function calibrateCcValue(profile, control, value0to1) {
+  return applyCalibrationCurve(value0to1, resolveCalibrationCurve(profile, control));
+}
+
 export function generateCcEvents(project, profile = getProfile(project)) {
   const events = [];
   const performanceNotes = computePerformanceNotes(project, profile);
@@ -866,7 +926,7 @@ export function generateCcEvents(project, profile = getProfile(project)) {
       events.push({
         tick: lookAheadTick,
         cc: control.target.cc,
-        value: clamp(Math.round(effectiveExpression(project, note, control.internalParameter) * 127), 0, 127),
+        value: calibrateCcValue(profile, control, effectiveExpression(project, note, control.internalParameter)),
         parameter: control.internalParameter,
         label: control.label,
         noteId: note.id
@@ -993,6 +1053,9 @@ export function validateProfile(profile) {
       const existing = ccByParam.get(control.internalParameter);
       if (existing !== undefined && existing !== target.cc) messages.push(error(`Internal parameter has competing CC assignments: ${control.internalParameter}`));
       ccByParam.set(control.internalParameter, target.cc);
+      if (control.calibrationCurveId && !resolveCalibrationCurve(profile, control)) {
+        messages.push(error(`Calibration curve unresolved: ${control.label} (${control.calibrationCurveId})`));
+      }
     }
     if (target.type === "midiLearnRequired") messages.push(warn(`MIDI Learn required: ${control.label} suggested CC${target.suggestedCC}`));
     if (target.type === "manual" || target.type === "unsupported" || target.type === "hostAutomation") messages.push(warn(`Not directly exported to MIDI: ${control.label} (${target.type})`));
