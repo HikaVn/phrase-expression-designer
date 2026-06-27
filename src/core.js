@@ -267,8 +267,11 @@ export function cloneProject(project) {
   return structuredClone(project);
 }
 
-export function getProfile(project) {
-  return BUILT_IN_PROFILES.find((profile) => profile.id === project.profileId) ?? BUILT_IN_PROFILES[0];
+// Resolve project.profileId against a profile list. Defaults to the built-ins
+// so core stays usable standalone, but callers with a runtime store (built-ins
+// plus imported/custom profiles) pass it so custom profiles resolve correctly.
+export function getProfile(project, profiles = BUILT_IN_PROFILES) {
+  return profiles.find((profile) => profile.id === project.profileId) ?? profiles[0];
 }
 
 export function getArticulation(profile, articulationId) {
